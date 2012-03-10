@@ -1,0 +1,2 @@
+This little RDP plugin was initially based on MESS 0.128 source code.
+Many thanks to Ville Linde, MooglyGuy and other people who wrote the RDP implementation found in MESS 0.128.
