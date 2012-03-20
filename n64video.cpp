@@ -272,6 +272,18 @@ typedef struct
 #define TEXEL_I16				0x12
 #define TEXEL_I32				0x13
 
+
+#define CVG_CLAMP				0
+#define CVG_WRAP				1
+#define CVG_ZAP					2
+#define CVG_SAVE				3
+
+
+#define ZMODE_OPAQUE			0
+#define ZMODE_INTERPENETRATING	1
+#define ZMODE_TRANSPARENT		2
+#define ZMODE_DECAL				3
+
 COMBINE_MODES combine;
 OTHER_MODES other_modes;
 
@@ -432,6 +444,7 @@ STRICTINLINE UINT16 decompress_cvmask_frombyte(UINT8 byte);
 STRICTINLINE void lookup_cvmask_derivatives(UINT32 mask, UINT8* offx, UINT8* offy);
 STRICTINLINE void z_store(UINT32 zcurpixel, UINT32 dzcurpixel, UINT32 z);
 INLINE UINT32 z_compare(UINT32 zcurpixel, UINT32 dzcurpixel, UINT32 sz, UINT16 dzpix);
+STRICTINLINE int finalize_spanalpha();
 STRICTINLINE INT32 normalize_dzpix(INT32 sum);
 STRICTINLINE INT32 CLIP(INT32 value,INT32 min,INT32 max);
 STRICTINLINE void video_filter16(int* r, int* g, int* b, UINT32 fboffset, UINT32 num, UINT32 hres, UINT32 centercvg);
@@ -489,7 +502,6 @@ static INT32 lod_frac = 0;
 UINT32 DebugMode = 0, DebugMode2 = 0;
 int debugcolor = 0;
 UINT8 hidden_bits[0x400000];
-#define zmode other_modes.z_mode
 struct {UINT32 shift; UINT32 add;} z_dec_table[8] = {
      6, 0x00000,
      5, 0x20000,
@@ -7275,35 +7287,8 @@ INLINE void fbwrite_16(UINT32 curpixel, UINT32 r, UINT32 g, UINT32 b)
 	UINT32 fb, hb;
 	fb = hb = (fb_address >> 1) + curpixel;	
 
-	UINT32 finalcvg;
-	UINT16 finalcolor; 
-	
-	
-	
-	switch(other_modes.cvg_dest)
-	{
-	case 0: 
-		if (!blend_en)
-		{
-			finalcvg = (curpixel_cvg - 1) & 7;
-		}
-		else
-		{
-			finalcvg = curpixel_cvg + curpixel_memcvg;
-			if (finalcvg & 8)
-				finalcvg = 7;
-		}
-		break;
-	case 1: 
-		finalcvg = (curpixel_cvg + curpixel_memcvg) & 7;
-		break;
-	case 2: 
-		finalcvg = 7;
-		break;
-	case 3: 
-		finalcvg = curpixel_memcvg;
-		break;
-	}
+	INT32 finalcvg = finalize_spanalpha();
+	INT16 finalcolor; 
 
 	if (fb_format == FORMAT_RGBA)
 	{
@@ -7325,46 +7310,20 @@ INLINE void fbwrite_16(UINT32 curpixel, UINT32 r, UINT32 g, UINT32 b)
 INLINE void fbwrite_32(UINT32 curpixel, UINT32 r, UINT32 g, UINT32 b)
 {
 	UINT32 fb = (fb_address >> 2) + curpixel;
-	UINT32 finalcolor = (r << 24) | (g << 16) | (b << 8);
-	UINT32 finalcvg = 0;
 	UINT32 hb = fb << 1;
-	
+
+	INT32 finalcolor;
+	INT32 finalcvg = finalize_spanalpha();
+		
 	if (other_modes.color_on_cvg && !prewrap)
 	{
 		finalcolor = RREADIDX32(fb) & 0xffffff00;
 	}
+	else
+		finalcolor = (r << 24) | (g << 16) | (b << 8);
 
-	switch(other_modes.cvg_dest)
-	{
-	case 0: 
-		if (!blend_en)
-		{
-			finalcvg = (curpixel_cvg - 1) & 7;
-			finalcolor |= (finalcvg << 5);
-			RWRITEIDX32(fb, finalcolor);
-		}
-		else
-		{
-			finalcvg = curpixel_cvg + curpixel_memcvg;
-			if (finalcvg & 8)
-				finalcvg = 7;
-			finalcolor |= (finalcvg << 5);
-			RWRITEIDX32(fb, finalcolor);
-		}
-		break;
-	case 1: 
-		finalcvg = (curpixel_cvg + curpixel_memcvg) & 7;
-		finalcolor |= (finalcvg << 5);
-		RWRITEIDX32(fb, finalcolor);
-		break;
-	case 2: 
-		RWRITEIDX32(fb, finalcolor | 0xE0);
-		break;
-	case 3: 
-		finalcolor |= (curpixel_memcvg << 5);
-		RWRITEIDX32(fb, finalcolor);
-		break;
-	}
+	finalcolor |= (finalcvg << 5);
+	RWRITEIDX32(fb, finalcolor);
 
 	
 	HWRITEADDR8(hb, (g & 1) ? 3 : 0);
@@ -7409,8 +7368,9 @@ INLINE void fbfill_32(UINT32 curpixel)
 STRICTINLINE void fbread_4(UINT32 curpixel)
 {
 	memory_color.r = memory_color.g = memory_color.b = 0;
-	curpixel_memcvg = 0;
-	memory_color.a = 0;
+	
+	curpixel_memcvg = 7;
+	memory_color.a = 0xe0;
 }
 
 STRICTINLINE void fbread_8(UINT32 curpixel)
@@ -7781,7 +7741,7 @@ INLINE UINT32 z_compare(UINT32 zcurpixel, UINT32 dzcurpixel, UINT32 sz, UINT16 d
 	int cvgcoeff = 0;
 	UINT32 dzenc = 0;
 	
-	if (other_modes.z_mode == 1 && infront && farther && overflow)
+	if (other_modes.z_mode == ZMODE_INTERPENETRATING && infront && farther && overflow)
 	{
 		dzenc = dz_compress(dznotshift & 0xffff);
 		cvgcoeff = ((oz >> dzenc) - (sz >> dzenc)) & 0xf;
@@ -7798,20 +7758,58 @@ INLINE UINT32 z_compare(UINT32 zcurpixel, UINT32 dzcurpixel, UINT32 sz, UINT16 d
 
 	switch(other_modes.z_mode)
 	{
-	case 0: 
+	case ZMODE_OPAQUE: 
 		return (max || (overflow ? infront : nearer));
 		break;
-	case 1: 
+	case ZMODE_INTERPENETRATING: 
 		return (max || (overflow ? infront : nearer)); 
 		break;
-	case 2: 
+	case ZMODE_TRANSPARENT: 
 		return (infront || max); 
 		break;
-	case 3: 
+	case ZMODE_DECAL: 
 		return (farther && nearer && !max); 
 		break;
 	}
 	return 0;
+}
+
+STRICTINLINE int finalize_spanalpha()
+{
+	int finalcvg;
+
+	
+	
+	switch(other_modes.cvg_dest)
+	{
+	case CVG_CLAMP: 
+		if (!blend_en)
+		{
+			finalcvg = curpixel_cvg - 1;
+			
+			
+		}
+		else
+		{
+			finalcvg = curpixel_cvg + curpixel_memcvg;
+		}
+		if (finalcvg & 8)
+			finalcvg = 7;
+		else
+			finalcvg &= 7;
+		break;
+	case CVG_WRAP:
+		finalcvg = (curpixel_cvg + curpixel_memcvg) & 7;
+		break;
+	case CVG_ZAP: 
+		finalcvg = 7;
+		break;
+	case CVG_SAVE: 
+		finalcvg = curpixel_memcvg;
+		break;
+	}
+
+	return finalcvg;
 }
 
 STRICTINLINE INT32 normalize_dzpix(INT32 sum)
