@@ -467,9 +467,7 @@ STRICTINLINE void tclod_load(INT32* sss, INT32* sst);
 STRICTINLINE void tclod_copy(INT32* sss, INT32* sst, INT32 s, INT32 t, INT32 w, INT32 dsinc, INT32 dtinc, INT32 dwinc, INT32 prim_tile, INT32* t1);
 STRICTINLINE void get_texel1_1cycle(INT32* s1, INT32* t1, INT32 s, INT32 t, INT32 w, INT32 dsinc, INT32 dtinc, INT32 dwinc, INT32 scanline, SPANSIGS* sigs);
 STRICTINLINE void get_nexttexel0_2cycle(INT32* s1, INT32* t1, INT32 s, INT32 t, INT32 w, INT32 dsinc, INT32 dtinc, INT32 dwinc);
-STRICTINLINE void video_max(UINT32* Pixels, UINT8* max, UINT32* enb);
-STRICTINLINE void video_max_penult(UINT32* Pixels, UINT8* max);
-STRICTINLINE UINT32 ge_two(UINT32 enb);
+STRICTINLINE void video_max_optimized(UINT32* Pixels, UINT32* pen);
 INLINE void calculate_clamp_diffs(UINT32 tile);
 INLINE void calculate_clamp_enables(UINT32 tile);
 STRICTINLINE void rgb_dither(int* r, int* g, int* b, int dith);
@@ -1020,6 +1018,7 @@ int rdp_update()
 	if ((vi_control >> 5) & 1)
 		stricterror("rdp_update: vbus_clock_enable bit set in VI_CONTROL_REG register. Never run this code on your N64! It's rumored that turning this bit on\
 					will result in permanent damage to the hardware! Emulation will now continue.\n");
+
 	
 	
 	
@@ -1384,7 +1383,7 @@ int rdp_update()
 								stricterror("rdp_update: caching of antialiased pixels failed %d %d", line_x, far_line_x);
 							divot_filter(&nextr, &nextg, &nextb, &viaa_cache[next_line_x], &viaa_cache[line_x], &viaa_cache[far_line_x]);
 						}
-						else if (i < (hres - 1))
+						else
 						{
 							nextr = viaa_cache[next_line_x].r;
 							nextg = viaa_cache[next_line_x].g;
@@ -1394,14 +1393,10 @@ int rdp_update()
 						
 						if (scan_divot_bounds && divot)
 						{
-							if (next_line_x > cache_next_marker)
-							{
-								vi_fetch_filter_ptr(&viaa_cache_next[next_line_x], frame_buffer, next_scan_x, fsaa, dither_filter, next_line_x, j + 1, vres);
-								cache_next_marker = next_line_x;
-							}
+							
 							divot_filter(&scanr, &scang, &scanb, &viaa_cache_next[line_x], &viaa_cache_next[prev_line_x], &viaa_cache_next[next_line_x]);
 						}
-						else if (j < (vres - 1))
+						else
 						{
 							scanr = viaa_cache_next[line_x].r;
 							scang = viaa_cache_next[line_x].g;
@@ -1418,7 +1413,7 @@ int rdp_update()
 							}
 							divot_filter(&scannextr, &scannextg, &scannextb, &viaa_cache_next[next_line_x], &viaa_cache_next[line_x], &viaa_cache_next[far_line_x]);
 						}
-						else if (j < (vres - 1) && i < (hres - 1))
+						else
 						{
 							scannextr = viaa_cache_next[next_line_x].r;
 							scannextg = viaa_cache_next[next_line_x].g;
@@ -1917,19 +1912,6 @@ INLINE void precalculate_everything(void)
 	
 	
 	precalc_cvmask_derivatives();
-
-	
-	
-	for (i = 0; i < 128; i++)
-	{
-		k = 0;
-		for (j = 0; j < 7; j++)
-		{
-			if (!((i >> j) & 1))
-				k++;
-		}
-		ge_two_table[i] = (k > 1);
-	}
 
 	
 	
@@ -5364,6 +5346,7 @@ static void edgewalker_for_prims(UINT32* ewdata)
 	
 	
 	
+	
 
 	spans_ds = dsdx & ~0x1f;
 	spans_dt = dtdx & ~0x1f;
@@ -7845,7 +7828,7 @@ STRICTINLINE void video_filter16(int* endr, int* endg, int* endb, UINT32 fboffse
 
 
 
-	FBCOLOR penumax, penumin, max, min; 
+	UINT32 penumaxr, penumaxg, penumaxb, penuminr, penuming, penuminb;
 	UINT16 pix;
 	UINT32 numoffull = 1;
 	UINT32 hidval;
@@ -7916,77 +7899,24 @@ STRICTINLINE void video_filter16(int* endr, int* endg, int* endb, UINT32 fboffse
 		stricterror("VIAA: something went wrong");
 
 	UINT32 colr, colg, colb;
-	
-	
-	UINT32 enb_r = 0, enb_g = 0, enb_b = 0, enb_ir = 0, enb_ig = 0, enb_ib = 0;
-	
-	
 
-	video_max(&backr[0], &max.r, &enb_r);
-	video_max(&backg[0], &max.g, &enb_g);
-	video_max(&backb[0], &max.b, &enb_b);
-	video_max(&invr[0], &min.r, &enb_ir);
-	video_max(&invg[0], &min.g, &enb_ig);
-	video_max(&invb[0], &min.b, &enb_ib);
+	video_max_optimized(&backr[0], &penumaxr);
+	video_max_optimized(&backg[0], &penumaxg);
+	video_max_optimized(&backb[0], &penumaxb);
+	video_max_optimized(&invr[0], &penuminr);
+	video_max_optimized(&invg[0], &penuming);
+	video_max_optimized(&invb[0], &penuminb);
 
-	int i = 0;
-	for (i = 1; i < 7; i++)
-	{
-		if (!((enb_r >> i) & 1))
-			backr[i] = 0;
-		if (!((enb_g >> i) & 1))
-			backg[i] = 0;
-		if (!((enb_b >> i) & 1))
-			backb[i] = 0;
-		if (!((enb_ir >> i) & 1))
-			invr[i] = 0;
-		if (!((enb_ig >> i) & 1))
-			invg[i] = 0;
-		if (!((enb_ib >> i) & 1))
-			invb[i] = 0;
-	}
+	penuminr = (~penuminr) & 0xff;
+	penuming = (~penuming) & 0xff;
+	penuminb = (~penuminb) & 0xff;
 
 	
-	video_max_penult(&backr[0], &penumax.r);
-	
-	
-
-	i = ge_two(enb_r);
-	penumax.r = i ? max.r : penumax.r;
-	
-	
-
-	video_max_penult(&backg[0], &penumax.g);
-	i = ge_two(enb_g);
-	penumax.g = i ? max.g : penumax.g;
-	
-	video_max_penult(&backb[0], &penumax.b);
-	i = ge_two(enb_b);
-	penumax.b = i ? max.b : penumax.b;
-	
-	video_max_penult(&invr[0], &penumin.r);
-	i = ge_two(enb_ir);
-	penumin.r = i ? min.r : penumin.r;
-	
-	video_max_penult(&invg[0], &penumin.g);
-	i = ge_two(enb_ig);
-	penumin.g = i ? min.g : penumin.g;
-	
-	video_max_penult(&invb[0], &penumin.b);
-	i = ge_two(enb_ib);
-	penumin.b = i ? min.b : penumin.b;
-
-	penumin.r = (~penumin.r) & 0xff;
-	penumin.g = (~penumin.g) & 0xff;
-	penumin.b = (~penumin.b) & 0xff;
-
-	
-
 	
 	UINT32 coeff = 7 - centercvg;
-	colr = (UINT32)penumin.r + (UINT32)penumax.r - (r << 1);
-	colg = (UINT32)penumin.g + (UINT32)penumax.g - (g << 1);
-	colb = (UINT32)penumin.b + (UINT32)penumax.b - (b << 1);
+	colr = penuminr + penumaxr - (r << 1);
+	colg = penuming + penumaxg - (g << 1);
+	colb = penuminb + penumaxb - (b << 1);
 
 	colr = (((colr * coeff) + 4) >> 3) + r;
 	colg = (((colg * coeff) + 4) >> 3) + g;
@@ -8003,7 +7933,7 @@ STRICTINLINE void video_filter16(int* endr, int* endg, int* endb, UINT32 fboffse
 STRICTINLINE void video_filter32(int* endr, int* endg, int* endb, UINT32 fboffset, UINT32 num, UINT32 hres, UINT32 centercvg)
 {
 
-	FBCOLOR penumax, penumin, max, min; 
+	UINT32 penumaxr, penumaxg, penumaxb, penuminr, penuming, penuminb;
 	UINT32 numoffull = 1;
 	UINT32 pix = 0, pixcvg = 0;
 	UINT32 r, g, b; 
@@ -8065,66 +7995,21 @@ STRICTINLINE void video_filter32(int* endr, int* endg, int* endb, UINT32 fboffse
 
 	UINT32 colr, colg, colb;
 
-	UINT32 enb_r = 0, enb_g = 0, enb_b = 0, enb_ir = 0, enb_ig = 0, enb_ib = 0;
+	video_max_optimized(&backr[0], &penumaxr);
+	video_max_optimized(&backg[0], &penumaxg);
+	video_max_optimized(&backb[0], &penumaxb);
+	video_max_optimized(&invr[0], &penuminr);
+	video_max_optimized(&invg[0], &penuming);
+	video_max_optimized(&invb[0], &penuminb);
 
-	video_max(&backr[0], &max.r, &enb_r);
-	video_max(&backg[0], &max.g, &enb_g);
-	video_max(&backb[0], &max.b, &enb_b);
-	video_max(&invr[0], &min.r, &enb_ir);
-	video_max(&invg[0], &min.g, &enb_ig);
-	video_max(&invb[0], &min.b, &enb_ib);
-	
-	int i = 0;
-	for (i = 1; i < 7; i++)
-	{
-		if (!((enb_r >> i) & 1))
-			backr[i] = 0;
-		if (!((enb_g >> i) & 1))
-			backg[i] = 0;
-		if (!((enb_b >> i) & 1))
-			backb[i] = 0;
-		if (!((enb_ir >> i) & 1))
-			invr[i] = 0;
-		if (!((enb_ig >> i) & 1))
-			invg[i] = 0;
-		if (!((enb_ib >> i) & 1))
-			invb[i] = 0;
-	}
-
-	video_max_penult(&backr[0], &penumax.r);
-	i = ge_two(enb_r);
-	penumax.r = i ? max.r : penumax.r;
-
-	video_max_penult(&backg[0], &penumax.g);
-	i = ge_two(enb_g);
-	penumax.g = i ? max.g : penumax.g;
-	
-	video_max_penult(&backb[0], &penumax.b);
-	i = ge_two(enb_b);
-	penumax.b = i ? max.b : penumax.b;
-	
-	video_max_penult(&invr[0], &penumin.r);
-	i = ge_two(enb_ir);
-	penumin.r = i ? min.r : penumin.r;
-	
-	video_max_penult(&invg[0], &penumin.g);
-	i = ge_two(enb_ig);
-	penumin.g = i ? min.g : penumin.g;
-	
-	video_max_penult(&invb[0], &penumin.b);
-	i = ge_two(enb_ib);
-	penumin.b = i ? min.b : penumin.b;
-
-	penumin.r = (~penumin.r) & 0xff;
-	penumin.g = (~penumin.g) & 0xff;
-	penumin.b = (~penumin.b) & 0xff;
-
-	
+	penuminr = (~penuminr) & 0xff;
+	penuming = (~penuming) & 0xff;
+	penuminb = (~penuminb) & 0xff;
 
 	INT32 coeff = 7 - (INT32)centercvg;
-	colr = (UINT32)penumin.r + (UINT32)penumax.r - (r << 1);
-	colg = (UINT32)penumin.g + (UINT32)penumax.g - (g << 1);
-	colb = (UINT32)penumin.b + (UINT32)penumax.b - (b << 1);
+	colr = penuminr + penumaxr - (r << 1);
+	colg = penuming + penumaxg - (g << 1);
+	colb = penuminb + penumaxb - (b << 1);
 
 	colr = (((colr * coeff) + 4) >> 3) + r;
 	colg = (((colg * coeff) + 4) >> 3) + g;
@@ -8340,46 +8225,33 @@ STRICTINLINE void adjust_brightness(int* r, int* g, int* b, int brightcoeff)
 	}
 }
 
-STRICTINLINE void video_max(UINT32* Pixels, UINT8* max, UINT32* enb)
+
+STRICTINLINE void video_max_optimized(UINT32* Pixels, UINT32* pen)
 {
-
-
 	int i;
 	int pos = 0;
-	int thisenb = 0, thismax = 0;
+	UINT32 curpen;
+	UINT32 max = 0;
 	for (i = 0; i < 7; i++)
 	{
 	    if (Pixels[i] >= Pixels[pos])
-			pos = i;
+		{
+			curpen = Pixels[pos];
+			pos = i;			
+		}
 	}
-	thismax = Pixels[pos];
-	for (i = 0; i < 7; i++)
+	max = Pixels[pos];
+	if (curpen != max)
 	{
-	    if (Pixels[i] != thismax)
-		    thisenb |= (1 << i);
+		for (i = pos + 1; i < 7; i++)
+		{
+			if (Pixels[i] >= curpen)
+			{
+				curpen = Pixels[i];
+			}
+		}
 	}
-	*enb = thisenb;
-	*max = thismax;
-}
-
-STRICTINLINE void video_max_penult(UINT32* Pixels, UINT8* max)
-{
-
-	int i;
-	int pos = 0;
-	for (i = 0; i < 7; i++)
-	{
-	    if (Pixels[i] >= Pixels[pos])
-			pos = i;
-	}
-	*max = Pixels[pos];
-}
-
-STRICTINLINE UINT32 ge_two(UINT32 enb)
-{
-
-
-	return ge_two_table[enb];
+	*pen = curpen;
 }
 
 
