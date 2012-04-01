@@ -81,7 +81,6 @@ UINT32 blend_en = 0;
 UINT32 prewrap = 0;
 UINT32 Malloced = 0;
 int blshifta = 0, blshiftb = 0;
-int dzpixenc = 0;
 UINT32 curpixel_memcvg = 0;
 UINT32 plim = 0x3fffff;
 UINT32 idxlim16 = 0x1fffff;
@@ -442,8 +441,8 @@ INLINE void z_build_com_table(void);
 INLINE void precalc_cvmask_derivatives(void);
 STRICTINLINE UINT16 decompress_cvmask_frombyte(UINT8 byte);
 STRICTINLINE void lookup_cvmask_derivatives(UINT32 mask, UINT8* offx, UINT8* offy);
-STRICTINLINE void z_store(UINT32 zcurpixel, UINT32 dzcurpixel, UINT32 z);
-INLINE UINT32 z_compare(UINT32 zcurpixel, UINT32 dzcurpixel, UINT32 sz, UINT16 dzpix);
+STRICTINLINE void z_store(UINT32 zcurpixel, UINT32 dzcurpixel, UINT32 z, int dzpixenc);
+INLINE UINT32 z_compare(UINT32 zcurpixel, UINT32 dzcurpixel, UINT32 sz, UINT16 dzpix, int dzpixenc);
 STRICTINLINE int finalize_spanalpha();
 STRICTINLINE INT32 normalize_dzpix(INT32 sum);
 STRICTINLINE INT32 CLIP(INT32 value,INT32 min,INT32 max);
@@ -4437,6 +4436,7 @@ void render_spans_1cycle(int start, int end, int tilenum, int flip)
 	int i, j;
 
 	int dzpix = other_modes.z_source_sel ? primitive_delta_z : spans_dzpix;
+	int dzpixenc = dz_compress(dzpix & 0xffff);
 	int drinc, dginc, dbinc, dainc, dzinc, dsinc, dtinc, dwinc;
 	if (flip)
 	{
@@ -4578,14 +4578,14 @@ void render_spans_1cycle(int start, int end, int tilenum, int flip)
 			zhbcur = zhb + curpixel;
 			
 			fbread_ptr(curpixel);
-			if (z_compare(zbcur, zhbcur, sz, dzpix))
+			if (z_compare(zbcur, zhbcur, sz, dzpix, dzpixenc))
 			{
 
 				if (blender_1cycle(&fir, &fig, &fib, cdith, partialreject, bsel0))
 				{
 					fbwrite_ptr(curpixel, fir, fig, fib);
 					if (other_modes.z_update_en)
-						z_store(zbcur, zhbcur, sz);
+						z_store(zbcur, zhbcur, sz, dzpixenc);
 				}
 			}
 
@@ -4636,6 +4636,7 @@ void render_spans_2cycle(int start, int end, int tilenum, int flip)
 	int i, j;
 
 	int dzpix = other_modes.z_source_sel ? primitive_delta_z : spans_dzpix;
+	int dzpixenc = dz_compress(dzpix & 0xffff);
 	int drinc, dginc, dbinc, dainc, dzinc, dsinc, dtinc, dwinc;
 	if (flip)
 	{
@@ -4768,14 +4769,14 @@ void render_spans_2cycle(int start, int end, int tilenum, int flip)
 			zhbcur = zhb + curpixel;
 			
 			fbread_ptr(curpixel);
-			if (z_compare(zbcur, zhbcur, sz, dzpix))
+			if (z_compare(zbcur, zhbcur, sz, dzpix, dzpixenc))
 			{
 				
 				if (blender_2cycle(&fir, &fig, &fib, cdith, partialreject, bsel0, bsel1))
 				{
 					fbwrite_ptr(curpixel, fir, fig, fib);
 					if (other_modes.z_update_en)
-						z_store(zbcur, zhbcur, sz);
+						z_store(zbcur, zhbcur, sz, dzpixenc);
 				}
 			}
 			
@@ -7635,7 +7636,7 @@ STRICTINLINE void lookup_cvmask_derivatives(UINT32 mask, UINT8* offx, UINT8* off
 	*offy = cvarray[index].yoff;
 }
 
-STRICTINLINE void z_store(UINT32 zcurpixel, UINT32 dzcurpixel, UINT32 z)
+STRICTINLINE void z_store(UINT32 zcurpixel, UINT32 dzcurpixel, UINT32 z, int dzpixenc)
 {
 	UINT16 zval = z_com_table[z & 0x3ffff]|(dzpixenc >> 2);
 	RWRITEIDX16(zcurpixel, zval);
@@ -7657,7 +7658,7 @@ STRICTINLINE UINT32 dz_compress(UINT32 value)
 	return j;
 }
 
-INLINE UINT32 z_compare(UINT32 zcurpixel, UINT32 dzcurpixel, UINT32 sz, UINT16 dzpix)
+INLINE UINT32 z_compare(UINT32 zcurpixel, UINT32 dzcurpixel, UINT32 sz, UINT16 dzpix, int dzpixenc)
 {
 
 
@@ -7683,7 +7684,6 @@ INLINE UINT32 z_compare(UINT32 zcurpixel, UINT32 dzcurpixel, UINT32 sz, UINT16 d
 	}
 
 	
-	dzpixenc = dz_compress(dzpix & 0xffff);
 	blshifta = CLIP(dzpixenc - rawdzmem, 0, 4);
 	blshiftb = CLIP(rawdzmem - dzpixenc, 0, 4);
 
