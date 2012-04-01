@@ -6978,6 +6978,7 @@ void rdp_process_list(void)
 	rdp_cmd_ptr = 0;
 	rdp_cmd_cur = 0;
 	dp_start = dp_current = dp_end;
+	dp_status |= DP_STATUS_CBUF_READY;
 }
 
 
