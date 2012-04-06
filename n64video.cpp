@@ -434,7 +434,7 @@ INLINE void fbread_4(UINT32 num);
 INLINE void fbread_8(UINT32 num);
 INLINE void fbread_16(UINT32 num);
 INLINE void fbread_32(UINT32 num);
-INLINE UINT32 z_decompress(UINT32 zcurpixel);
+STRICTINLINE UINT32 z_decompress(UINT32 rawz);
 STRICTINLINE UINT32 dz_decompress(UINT32 compresseddz);
 STRICTINLINE UINT32 dz_compress(UINT32 value);
 INLINE void z_build_com_table(void);
@@ -7415,9 +7415,8 @@ STRICTINLINE void fbread_32(UINT32 curpixel)
 	}
 }
 
-INLINE UINT32 z_decompress(UINT32 zcurpixel)
+STRICTINLINE UINT32 z_decompress(UINT32 zb)
 {
-	UINT32 zb = RREADIDX16(zcurpixel);
 	return z_complete_dec_table[(zb >> 2) & 0x3fff];
 }
 
@@ -7668,8 +7667,8 @@ INLINE UINT32 z_compare(UINT32 zcurpixel, UINT32 dzcurpixel, UINT32 sz, UINT16 d
 
 	if (other_modes.z_compare_en)
 	{
-		oz = z_decompress(zcurpixel);
 		zval = RREADIDX16(zcurpixel);
+		oz = z_decompress(zval);		
 		rawdzmem = ((zval & 3) << 2) | (HREADADDR8(dzcurpixel) & 3);
 		dzmem = dz_decompress(rawdzmem);
 	}
