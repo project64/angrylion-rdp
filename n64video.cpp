@@ -7700,9 +7700,9 @@ INLINE UINT32 z_compare(UINT32 zcurpixel, UINT32 dzcurpixel, UINT32 sz, UINT16 d
 		dznew <<= 3;
 		
 
-		UINT32 farther = (force_coplanar || (sz + dznew) >= oz) ? 1 : 0;
+		UINT32 farther = force_coplanar || ((sz + dznew) >= oz);
 		
-		int overflow = ((curpixel_memcvg + curpixel_cvg) & 8) > 0;
+		int overflow = (curpixel_memcvg + curpixel_cvg) & 8;
 		blend_en = other_modes.force_blend || (!overflow && other_modes.antialias_en && farther);
 		
 		prewrap = overflow;
@@ -7718,14 +7718,14 @@ INLINE UINT32 z_compare(UINT32 zcurpixel, UINT32 dzcurpixel, UINT32 sz, UINT16 d
 		switch(other_modes.z_mode)
 		{
 		case ZMODE_OPAQUE: 
-			infront = (sz < oz) ? 1 : 0;
+			infront = sz < oz;
 			diff = (INT32)sz - (INT32)dznew;
-			nearer = (force_coplanar || diff <= (INT32)oz) ? 1: 0;
+			nearer = force_coplanar || (diff <= (INT32)oz);
 			max = (oz == 0x3ffff);
 			return (max || (overflow ? infront : nearer));
 			break;
 		case ZMODE_INTERPENETRATING: 
-			infront = (sz < oz) ? 1 : 0;
+			infront = sz < oz;
 			if (infront && farther && overflow)
 			{
 				dzenc = dz_compress(dznotshift & 0xffff);
@@ -7736,19 +7736,19 @@ INLINE UINT32 z_compare(UINT32 zcurpixel, UINT32 dzcurpixel, UINT32 sz, UINT16 d
 			else
 			{
 				diff = (INT32)sz - (INT32)dznew;
-				nearer = (force_coplanar || diff <= (INT32)oz) ? 1: 0;
+				nearer = force_coplanar || (diff <= (INT32)oz);
 				max = (oz == 0x3ffff);
 				return (max || (overflow ? infront : nearer)); 
 			}
 			break;
 		case ZMODE_TRANSPARENT: 
-			infront = (sz < oz) ? 1 : 0;
+			infront = sz < oz;
 			max = (oz == 0x3ffff);
 			return (infront || max); 
 			break;
 		case ZMODE_DECAL: 
 			diff = (INT32)sz - (INT32)dznew;
-			nearer = (force_coplanar || diff <= (INT32)oz) ? 1: 0;
+			nearer = force_coplanar || (diff <= (INT32)oz);
 			max = (oz == 0x3ffff);
 			return (farther && nearer && !max); 
 			break;
@@ -7762,7 +7762,7 @@ INLINE UINT32 z_compare(UINT32 zcurpixel, UINT32 dzcurpixel, UINT32 sz, UINT16 d
 		blshifta = CLIP(dzpixenc - 0xf, 0, 4);
 		blshiftb = CLIP(0xf - dzpixenc, 0, 4);
 
-		int overflow = ((curpixel_memcvg + curpixel_cvg) & 8) > 0;
+		int overflow = (curpixel_memcvg + curpixel_cvg) & 8;
 		blend_en = other_modes.force_blend || (!overflow && other_modes.antialias_en);
 		prewrap = overflow;
 
