@@ -7672,87 +7672,90 @@ INLINE UINT32 z_compare(UINT32 zcurpixel, UINT32 dzcurpixel, UINT32 sz, UINT16 d
 		oz = z_decompress(zval);		
 		rawdzmem = ((zval & 3) << 2) | (HREADADDR8(dzcurpixel) & 3);
 		dzmem = dz_decompress(rawdzmem);
+
+		
+		blshifta = CLIP(dzpixenc - rawdzmem, 0, 4);
+		blshiftb = CLIP(rawdzmem - dzpixenc, 0, 4);
+
+		int precision_factor = (zval >> 13) & 0xf;
+
+		
+		UINT32 dzmemmodifier; 
+		if (precision_factor < 3)
+		{
+			dzmemmodifier = 16 >> precision_factor;
+			if (dzmem == 0x8000)
+				force_coplanar = 1;
+			dzmem <<= 1;
+			if (dzmem <= dzmemmodifier)
+				dzmem = dzmemmodifier;
+			if (!dzmem)
+				dzmem = 0xffff;
+		}
+		if (dzmem > 0x8000)
+			dzmem = 0xffff;
+
+		UINT32 dznew = (dzmem > dzpix) ? dzmem : (UINT32)dzpix;
+		UINT32 dznotshift = dznew;
+		dznew <<= 3;
+		
+
+		UINT32 farther = (force_coplanar || (sz + dznew) >= oz) ? 1 : 0;
+		UINT32 infront = (sz < oz) ? 1 : 0;
+
+		int overflow = ((curpixel_memcvg + curpixel_cvg) & 8) > 0;
+		blend_en = other_modes.force_blend || (!overflow && other_modes.antialias_en && farther);
+		
+		prewrap = overflow;
+
+		
+		
+		int cvgcoeff = 0;
+		UINT32 dzenc = 0;
+	
+		if (other_modes.z_mode == ZMODE_INTERPENETRATING && infront && farther && overflow)
+		{
+			dzenc = dz_compress(dznotshift & 0xffff);
+			cvgcoeff = ((oz >> dzenc) - (sz >> dzenc)) & 0xf;
+			curpixel_cvg = ((cvgcoeff * curpixel_cvg) >> 3) & 0xf;
+		}
+
+		
+		
+		INT32 diff = (INT32)sz - (INT32)dznew;
+		UINT32 nearer = (force_coplanar || diff <= (INT32)oz) ? 1: 0;
+		UINT32 max = (oz == 0x3ffff);
+
+		switch(other_modes.z_mode)
+		{
+		case ZMODE_OPAQUE: 
+			return (max || (overflow ? infront : nearer));
+			break;
+		case ZMODE_INTERPENETRATING: 
+			return (max || (overflow ? infront : nearer)); 
+			break;
+		case ZMODE_TRANSPARENT: 
+			return (infront || max); 
+			break;
+		case ZMODE_DECAL: 
+			return (farther && nearer && !max); 
+			break;
+		}
+		return 0;
 	}
 	else
 	{
-		oz = 0;
-		dzmem = 1 << 0xf;
-		zval = 0x3;
-		rawdzmem = 0xf;
-	}
-
-	
-	blshifta = CLIP(dzpixenc - rawdzmem, 0, 4);
-	blshiftb = CLIP(rawdzmem - dzpixenc, 0, 4);
-
-	int precision_factor = (zval >> 13) & 0xf;
-
-	
-	UINT32 dzmemmodifier; 
-	if (precision_factor < 3)
-	{
-		dzmemmodifier = 16 >> precision_factor;
-		if (dzmem == 0x8000)
-			force_coplanar = 1;
-		dzmem <<= 1;
-		if (dzmem <= dzmemmodifier)
-			dzmem = dzmemmodifier;
-		if (!dzmem)
-			dzmem = 0xffff;
-	}
-	if (dzmem > 0x8000)
-		dzmem = 0xffff;
 		
 
-	UINT32 dznew = (dzmem > dzpix) ? dzmem : (UINT32)dzpix;
-	UINT32 dznotshift = dznew;
-	dznew <<= 3;
-	
+		blshifta = CLIP(dzpixenc - 0xf, 0, 4);
+		blshiftb = CLIP(0xf - dzpixenc, 0, 4);
 
-	UINT32 farther = (force_coplanar || (sz + dznew) >= oz) ? 1 : 0;
-	UINT32 infront = (sz < oz) ? 1 : 0;
-	
-	int overflow = ((curpixel_memcvg + curpixel_cvg) & 8) > 0;
-	blend_en = other_modes.force_blend || (!overflow && other_modes.antialias_en && farther);
-	
-	prewrap = overflow;
-	
-	
-	
-	int cvgcoeff = 0;
-	UINT32 dzenc = 0;
-	
-	if (other_modes.z_mode == ZMODE_INTERPENETRATING && infront && farther && overflow)
-	{
-		dzenc = dz_compress(dznotshift & 0xffff);
-		cvgcoeff = ((oz >> dzenc) - (sz >> dzenc)) & 0xf;
-		curpixel_cvg = ((cvgcoeff * curpixel_cvg) >> 3) & 0xf;
-	}
-	
-	if (!other_modes.z_compare_en)
+		int overflow = ((curpixel_memcvg + curpixel_cvg) & 8) > 0;
+		blend_en = other_modes.force_blend || (!overflow && other_modes.antialias_en);
+		prewrap = overflow;
+
 		return 1;
-
-	
-	INT32 diff = (INT32)sz - (INT32)dznew;
-	UINT32 nearer = (force_coplanar || diff <= (INT32)oz) ? 1: 0;
-	UINT32 max = (oz == 0x3ffff);
-
-	switch(other_modes.z_mode)
-	{
-	case ZMODE_OPAQUE: 
-		return (max || (overflow ? infront : nearer));
-		break;
-	case ZMODE_INTERPENETRATING: 
-		return (max || (overflow ? infront : nearer)); 
-		break;
-	case ZMODE_TRANSPARENT: 
-		return (infront || max); 
-		break;
-	case ZMODE_DECAL: 
-		return (farther && nearer && !max); 
-		break;
 	}
-	return 0;
 }
 
 STRICTINLINE int finalize_spanalpha()
