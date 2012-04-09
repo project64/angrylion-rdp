@@ -7701,8 +7701,7 @@ INLINE UINT32 z_compare(UINT32 zcurpixel, UINT32 dzcurpixel, UINT32 sz, UINT16 d
 		
 
 		UINT32 farther = (force_coplanar || (sz + dznew) >= oz) ? 1 : 0;
-		UINT32 infront = (sz < oz) ? 1 : 0;
-
+		
 		int overflow = ((curpixel_memcvg + curpixel_cvg) & 8) > 0;
 		blend_en = other_modes.force_blend || (!overflow && other_modes.antialias_en && farther);
 		
@@ -7713,31 +7712,44 @@ INLINE UINT32 z_compare(UINT32 zcurpixel, UINT32 dzcurpixel, UINT32 sz, UINT16 d
 		int cvgcoeff = 0;
 		UINT32 dzenc = 0;
 	
-		if (other_modes.z_mode == ZMODE_INTERPENETRATING && infront && farther && overflow)
-		{
-			dzenc = dz_compress(dznotshift & 0xffff);
-			cvgcoeff = ((oz >> dzenc) - (sz >> dzenc)) & 0xf;
-			curpixel_cvg = ((cvgcoeff * curpixel_cvg) >> 3) & 0xf;
-		}
-
-		
-		
-		INT32 diff = (INT32)sz - (INT32)dznew;
-		UINT32 nearer = (force_coplanar || diff <= (INT32)oz) ? 1: 0;
-		UINT32 max = (oz == 0x3ffff);
+		INT32 diff;
+		UINT32 nearer, max, infront;
 
 		switch(other_modes.z_mode)
 		{
 		case ZMODE_OPAQUE: 
+			infront = (sz < oz) ? 1 : 0;
+			diff = (INT32)sz - (INT32)dznew;
+			nearer = (force_coplanar || diff <= (INT32)oz) ? 1: 0;
+			max = (oz == 0x3ffff);
 			return (max || (overflow ? infront : nearer));
 			break;
 		case ZMODE_INTERPENETRATING: 
-			return (max || (overflow ? infront : nearer)); 
+			infront = (sz < oz) ? 1 : 0;
+			if (infront && farther && overflow)
+			{
+				dzenc = dz_compress(dznotshift & 0xffff);
+				cvgcoeff = ((oz >> dzenc) - (sz >> dzenc)) & 0xf;
+				curpixel_cvg = ((cvgcoeff * curpixel_cvg) >> 3) & 0xf;
+				return 1;
+			}
+			else
+			{
+				diff = (INT32)sz - (INT32)dznew;
+				nearer = (force_coplanar || diff <= (INT32)oz) ? 1: 0;
+				max = (oz == 0x3ffff);
+				return (max || (overflow ? infront : nearer)); 
+			}
 			break;
 		case ZMODE_TRANSPARENT: 
+			infront = (sz < oz) ? 1 : 0;
+			max = (oz == 0x3ffff);
 			return (infront || max); 
 			break;
 		case ZMODE_DECAL: 
+			diff = (INT32)sz - (INT32)dznew;
+			nearer = (force_coplanar || diff <= (INT32)oz) ? 1: 0;
+			max = (oz == 0x3ffff);
 			return (farther && nearer && !max); 
 			break;
 		}
