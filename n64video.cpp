@@ -551,6 +551,7 @@ INT32 special_9bit_exttable[512];
 INT32 ge_two_table[128];
 INT32 log2table[256];
 UINT8 tcdivshifttable[0x8000];
+INT32 tlu_rcp_table[0x4000];
 INT32 clamp_t_diff[8];
 INT32 clamp_s_diff[8];
 CVtcmaskDERIVATIVE cvarray[0x100];
@@ -1680,7 +1681,7 @@ STRICTINLINE void combiner_1cycle(int adseed)
 
 	INT32 redkey, greenkey, bluekey, temp;
 
-	texel1_color = nexttexel_color;
+	
 
 	
 	combined_color.r = color_combiner_equation(*combiner_rgbsub_a_r[1],*combiner_rgbsub_b_r[1],*combiner_rgbmul_r[1],*combiner_rgbadd_r[1]);
@@ -1988,6 +1989,24 @@ INLINE void precalculate_everything(void)
 		tcdivshifttable[i] = k - 1;
 	}
 
+	
+	
+	int temppoint, tempslope, normout;
+	int wnorm;
+	for (i = 0; i < 0x4000; i++)
+	{
+		normout = i;
+		wnorm = (normout & 0xff) << 2;
+		normout >>= 8;
+
+		
+		
+		temppoint = norm_point_table[normout];
+		tempslope = norm_slope_table[normout] | ~0x3ff;
+		
+		tlu_rcp_table[i] = (((tempslope * wnorm) >> 10) + temppoint) & 0x7fff;
+		
+	}
 }
 
 INLINE void SET_BLENDER_INPUT(int cycle, int which, INT32 **input_r, INT32 **input_g, INT32 **input_b, INT32 **input_a, int a, int b)
@@ -4553,7 +4572,7 @@ void render_spans_1cycle(int start, int end, int tilenum, int flip)
 			}
 			else
 			{
-				texel0_color = nexttexel_color;
+				texel0_color = texel1_color;
 				lod_frac = prelodfrac;
 			}
 			
@@ -4563,7 +4582,7 @@ void render_spans_1cycle(int start, int end, int tilenum, int flip)
 			
 			tclod_1cycle_next(&news, &newt, s + dsinc, t + dtinc, w + dwinc, dsinc, dtinc, dwinc, i, prim_tile, &newtile, &sigs, &prelodfrac);			
 			
-			texture_pipeline_cycle(&nexttexel_color, &nexttexel_color, news, newt, newtile, 0);
+			texture_pipeline_cycle(&texel1_color, &texel1_color, news, newt, newtile, 0);
 
 			sigs.startspan = 0;
 
@@ -8559,6 +8578,7 @@ STRICTINLINE void tcdiv_nopersp(INT32 ss, INT32 st, INT32 sw, INT32* sss, INT32*
 	*sst = (SIGN16(st)) & 0x1ffff;
 }
 
+
 STRICTINLINE void tcdiv_persp(INT32 ss, INT32 st, INT32 sw, INT32* sss, INT32* sst)
 {
 
@@ -8566,14 +8586,14 @@ STRICTINLINE void tcdiv_persp(INT32 ss, INT32 st, INT32 sw, INT32* sss, INT32* s
 	int w_carry = 0;
 	int shift; 
 	int normout;
-	int wnorm;
 	int tlu_rcp;
-	int temppoint, tempslope;
-	int sprod, tprod;
+    int sprod, tprod;
 	int outofbounds_s, outofbounds_t;
-	int under_s, under_t, over_s, over_t;
 	int tempmask;
 	int shift_value;
+	
+	
+	int overunder_s = 0, overunder_t = 0;
 	
 	if ((sw & 0x8000) || !(sw & 0x7fff))
 		w_carry = 1;
@@ -8583,16 +8603,8 @@ STRICTINLINE void tcdiv_persp(INT32 ss, INT32 st, INT32 sw, INT32* sss, INT32* s
 	shift = tcdivshifttable[sw];
 	
 	normout = (sw << shift) & 0x3fff;
-	wnorm = (normout & 0xff) << 2;
-	normout >>= 8;
 
-	
-	
-	temppoint = norm_point_table[normout];
-	tempslope = norm_slope_table[normout] | ~0x3ff;
-		
-	tlu_rcp = (((tempslope * wnorm) >> 10) + temppoint) & 0x7fff;
-	
+	tlu_rcp = tlu_rcp_table[normout];
 
 	sprod = SIGN16(ss) * tlu_rcp;
 	tprod = SIGN16(st) * tlu_rcp;
@@ -8600,10 +8612,9 @@ STRICTINLINE void tcdiv_persp(INT32 ss, INT32 st, INT32 sw, INT32* sss, INT32* s
 	
 	tempmask = ((1 << (shift + 1)) - 1) << (29 - shift);
 	
-	shift_value = 13 - shift;
-
 	outofbounds_s = sprod & tempmask;
 	outofbounds_t = tprod & tempmask;
+	
 	if (shift == 0xe)
 	{
 		*sss = sprod << 1;
@@ -8611,34 +8622,35 @@ STRICTINLINE void tcdiv_persp(INT32 ss, INT32 st, INT32 sw, INT32* sss, INT32* s
 	}
 	else
 	{
+		shift_value = 13 - shift;
 		*sss = sprod = (sprod >> shift_value);
 		*sst = tprod = (tprod >> shift_value);
 	}
-
-	
-	under_s = under_t = over_s = over_t = 0;
 	
 	if (outofbounds_s != tempmask && outofbounds_s != 0)
 	{
 		if (sprod & (1 << 29))
-			under_s = 1;
+			overunder_s = 1;
 		else
-			over_s = 1;
+			overunder_s = 2;
 	}
 
 	if (outofbounds_t != tempmask && outofbounds_t != 0)
 	{
 		if (tprod & (1 << 29))
-			under_t = 1;
+			overunder_t = 1;
 		else
-			over_t = 1;
+			overunder_t = 2;
 	}
 
-	over_s |= w_carry;
-	over_t |= w_carry;
+	if (w_carry)
+	{
+		overunder_s |= 2;
+		overunder_t |= 2;
+	}
 
-	*sss = (*sss & 0x1ffff) | (over_s << 18) | (under_s << 17);
-	*sst = (*sst & 0x1ffff) | (over_t << 18) | (under_t << 17);
+	*sss = (*sss & 0x1ffff) | (overunder_s << 17);
+	*sst = (*sst & 0x1ffff) | (overunder_t << 17);
 }
 
 STRICTINLINE void tclod_2cycle_current(INT32* sss, INT32* sst, INT32 nexts, INT32 nextt, INT32 s, INT32 t, INT32 w, INT32 dsinc, INT32 dtinc, INT32 dwinc, INT32 prim_tile, INT32* t1, INT32* t2)
