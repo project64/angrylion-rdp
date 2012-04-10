@@ -79,6 +79,7 @@ UINT32 prevwasblank = 0;
 UINT32 double_stretch = 0;
 UINT32 blend_en = 0;
 UINT32 prewrap = 0;
+int dolod = 0;
 UINT32 Malloced = 0;
 int blshifta = 0, blshiftb = 0;
 UINT32 curpixel_memcvg = 0;
@@ -4445,6 +4446,7 @@ void render_spans_1cycle(int start, int end, int tilenum, int flip)
 		
 	int partialreject = (blender2b_a[0] == &inv_pixel_color.a && blender1b_a[0] == &pixel_color.a);
 	int bsel0 = (blender2b_a[0] == &memory_color.a);
+	dolod = other_modes.tex_lod_en || (combiner_rgbmul_r[1] == &lod_frac) || (combiner_alphamul[1] == &lod_frac);
 
 	int prim_tile = tilenum;
 	int tile1 = tilenum;
@@ -4579,8 +4581,12 @@ void render_spans_1cycle(int start, int end, int tilenum, int flip)
 			sigs.nextspan = sigs.endspan;
 			sigs.endspan = sigs.preendspan;
 			sigs.preendspan = (j == (length - 2));
+
+			s += dsinc;
+			t += dtinc;
+			w += dwinc;
 			
-			tclod_1cycle_next(&news, &newt, s + dsinc, t + dtinc, w + dwinc, dsinc, dtinc, dwinc, i, prim_tile, &newtile, &sigs, &prelodfrac);			
+			tclod_1cycle_next(&news, &newt, s, t, w, dsinc, dtinc, dwinc, i, prim_tile, &newtile, &sigs, &prelodfrac);			
 			
 			texture_pipeline_cycle(&texel1_color, &texel1_color, news, newt, newtile, 0);
 
@@ -4616,9 +4622,7 @@ void render_spans_1cycle(int start, int end, int tilenum, int flip)
 			b += dbinc;
 			a += dainc;
 			z += dzinc;
-			s += dsinc;
-			t += dtinc;
-			w += dwinc;
+			
 			x += xinc;
 		}
 		}
@@ -4651,6 +4655,7 @@ void render_spans_2cycle(int start, int end, int tilenum, int flip)
 	int partialreject = (blender2b_a[1] == &inv_pixel_color.a && blender1b_a[1] == &pixel_color.a);
 	int bsel0 = (blender2b_a[0] == &memory_color.a);
 	int bsel1 = (blender2b_a[1] == &memory_color.a);
+	dolod = other_modes.tex_lod_en || (combiner_rgbmul_r[0] == &lod_frac) || (combiner_rgbmul_r[1] == &lod_frac) || (combiner_alphamul[0] == &lod_frac) || (combiner_alphamul[1] == &lod_frac);
 
 	int i, j;
 
@@ -4770,7 +4775,11 @@ void render_spans_2cycle(int start, int end, int tilenum, int flip)
 				texel1_color = nexttexel1_color;
 			}
 
-			tclod_2cycle_next(&news, &newt, s + dsinc, t + dtinc, w + dwinc, dsinc, dtinc, dwinc, prim_tile, &newtile1, &newtile2, &prelodfrac);
+			s += dsinc;
+			t += dtinc;
+			w += dwinc;
+
+			tclod_2cycle_next(&news, &newt, s, t, w, dsinc, dtinc, dwinc, prim_tile, &newtile1, &newtile2, &prelodfrac);
 
 			texture_pipeline_cycle(&nexttexel_color, &nexttexel_color, news, newt, newtile1, 0);
 			texture_pipeline_cycle(&nexttexel1_color, &nexttexel_color, news, newt, newtile2, 1);
@@ -4806,9 +4815,7 @@ void render_spans_2cycle(int start, int end, int tilenum, int flip)
 			b += dbinc;
 			a += dainc;
 			z += dzinc;
-			s += dsinc;
-			t += dtinc;
-			w += dwinc;
+			
 			x += xinc;
 		}
 		}
@@ -8578,7 +8585,6 @@ STRICTINLINE void tcdiv_nopersp(INT32 ss, INT32 st, INT32 sw, INT32* sss, INT32*
 	*sst = (SIGN16(st)) & 0x1ffff;
 }
 
-
 STRICTINLINE void tcdiv_persp(INT32 ss, INT32 st, INT32 sw, INT32* sss, INT32* sst)
 {
 
@@ -8669,33 +8675,10 @@ STRICTINLINE void tclod_2cycle_current(INT32* sss, INT32* sst, INT32 nexts, INT3
 	UINT32 l_tile;
 	UINT32 magnify = 0;
 	UINT32 distant = 0;
-
-	
-	
-	
-	
-	
-	
-	nextys = (s + spans_dsdy) >> 16;
-	nextyt = (t + spans_dtdy) >> 16;
-	nextysw = (w + spans_dwdy) >> 16;
-
-	if (other_modes.persp_tex_en)
-		tcdiv_persp(nextys, nextyt, nextysw, &nextys, &nextyt);
-	else
-		tcdiv_nopersp(nextys, nextyt, nextysw, &nextys, &nextyt);
-
-	lodclamp = (*sst & 0x60000) || (nextt & 0x60000) || (*sss & 0x60000) || (nexts & 0x60000) || (nextys & 0x60000) || (nextyt & 0x60000);
-	
-	
-
-	tclod_4x17_to_15(*sss & 0x1ffff, nexts & 0x1ffff, *sst & 0x1ffff, nextt & 0x1ffff, 0, &lod);
-	tclod_4x17_to_15(*sss & 0x1ffff, nextys & 0x1ffff, *sst & 0x1ffff, nextyt & 0x1ffff, lod, &lod);
-
-	
-
-	
 	int tempanded;
+	int inits = *sss, initt = *sst;
+
+	
 	if (*sss & 0x40000)
 		*sss = 0x7fff;
 	else if (*sss & 0x20000)
@@ -8726,58 +8709,82 @@ STRICTINLINE void tclod_2cycle_current(INT32* sss, INT32* sst, INT32 nexts, INT3
 			*sst &= 0xffff;
 	}
 
-
-	
-	if ((lod & 0x4000) || lodclamp)
-		lod = 0x7fff;
-	else if (lod < min_level)
-		lod = min_level;
-						
-	magnify = (lod < 32) ? 1: 0;
-	l_tile =  log2table[(lod >> 5) & 0xff];
-	distant = ((lod & 0x6000) || l_tile >= max_level) ? 1 : 0;
-						
-	lod_frac = ((lod << 3) >> l_tile) & 0xff;
-
-	
-	if(!other_modes.sharpen_tex_en && !other_modes.detail_tex_en)
+	if (dolod)
 	{
-		if (distant)
-			lod_frac = 0xff;
-		else if (magnify)
-			lod_frac = 0;
-	}
+		
+		
+		
+		
+		
+		
+		nextys = (s + spans_dsdy) >> 16;
+		nextyt = (t + spans_dtdy) >> 16;
+		nextysw = (w + spans_dwdy) >> 16;
 
-	
-	
+		if (other_modes.persp_tex_en)
+			tcdiv_persp(nextys, nextyt, nextysw, &nextys, &nextyt);
+		else
+			tcdiv_nopersp(nextys, nextyt, nextysw, &nextys, &nextyt);
 
-	if(other_modes.sharpen_tex_en && magnify)
-		lod_frac |= 0x100;
+		lodclamp = (initt & 0x60000) || (nextt & 0x60000) || (inits & 0x60000) || (nexts & 0x60000) || (nextys & 0x60000) || (nextyt & 0x60000);
+		
+		
 
-	
-	if (other_modes.tex_lod_en)
-	{
-		if (distant)
-			l_tile = max_level;
-		if (!other_modes.detail_tex_en)
+		tclod_4x17_to_15(inits & 0x1ffff, nexts & 0x1ffff, initt & 0x1ffff, nextt & 0x1ffff, 0, &lod);
+		tclod_4x17_to_15(inits & 0x1ffff, nextys & 0x1ffff, initt & 0x1ffff, nextyt & 0x1ffff, lod, &lod);
+
+		
+		if ((lod & 0x4000) || lodclamp)
+			lod = 0x7fff;
+		else if (lod < min_level)
+			lod = min_level;
+						
+		magnify = (lod < 32) ? 1: 0;
+		l_tile =  log2table[(lod >> 5) & 0xff];
+		distant = ((lod & 0x6000) || l_tile >= max_level) ? 1 : 0;
+						
+		lod_frac = ((lod << 3) >> l_tile) & 0xff;
+
+		
+		if(!other_modes.sharpen_tex_en && !other_modes.detail_tex_en)
 		{
-			*t1 = (prim_tile + l_tile) & 7;
-			if (!(distant || (!other_modes.sharpen_tex_en && magnify)))
-				*t2 = (*t1 + 1) & 7;
-			else
-				*t2 = *t1;
+			if (distant)
+				lod_frac = 0xff;
+			else if (magnify)
+				lod_frac = 0;
 		}
-		else 
+
+		
+		
+
+		if(other_modes.sharpen_tex_en && magnify)
+			lod_frac |= 0x100;
+
+		
+		if (other_modes.tex_lod_en)
 		{
-			if (!magnify)
-				*t1 = (prim_tile + l_tile + 1);
-			else
-				*t1 = (prim_tile + l_tile);
-			*t1 &= 7;
-			if (!distant && !magnify)
-				*t2 = (prim_tile + l_tile + 2) & 7;
-			else
-				*t2 = (prim_tile + l_tile + 1) & 7;
+			if (distant)
+				l_tile = max_level;
+			if (!other_modes.detail_tex_en)
+			{
+				*t1 = (prim_tile + l_tile) & 7;
+				if (!(distant || (!other_modes.sharpen_tex_en && magnify)))
+					*t2 = (*t1 + 1) & 7;
+				else
+					*t2 = *t1;
+			}
+			else 
+			{
+				if (!magnify)
+					*t1 = (prim_tile + l_tile + 1);
+				else
+					*t1 = (prim_tile + l_tile);
+				*t1 &= 7;
+				if (!distant && !magnify)
+					*t2 = (prim_tile + l_tile + 2) & 7;
+				else
+					*t2 = (prim_tile + l_tile + 1) & 7;
+			}
 		}
 	}
 }
@@ -8790,32 +8797,10 @@ STRICTINLINE void tclod_2cycle_next(INT32* sss, INT32* sst, INT32 s, INT32 t, IN
 	UINT32 l_tile;
 	UINT32 magnify = 0;
 	UINT32 distant = 0;
-
-	nextsw = (w + dwinc) >> 16;
-	nexts = (s + dsinc) >> 16;
-	nextt = (t + dtinc) >> 16;
-	nextys = (s + spans_dsdy) >> 16;
-	nextyt = (t + spans_dtdy) >> 16;
-	nextysw = (w + spans_dwdy) >> 16;
-
-	if (other_modes.persp_tex_en)
-	{
-		tcdiv_persp(nexts, nextt, nextsw, &nexts, &nextt);
-		tcdiv_persp(nextys, nextyt, nextysw, &nextys, &nextyt);
-	}
-	else
-	{
-		tcdiv_nopersp(nexts, nextt, nextsw, &nexts, &nextt);
-		tcdiv_nopersp(nextys, nextyt, nextysw, &nextys, &nextyt);
-	}
-	
-	lodclamp = (*sst & 0x60000) || (nextt & 0x60000) || (*sss & 0x60000) || (nexts & 0x60000) || (nextys & 0x60000) || (nextyt & 0x60000);
-
-	tclod_4x17_to_15(*sss & 0x1ffff, nexts & 0x1ffff, *sst & 0x1ffff, nextt & 0x1ffff, 0, &lod);
-	tclod_4x17_to_15(*sss & 0x1ffff, nextys & 0x1ffff, *sst & 0x1ffff, nextyt & 0x1ffff, lod, &lod);
-
-	
 	int tempanded;
+	int inits = *sss, initt = *sst;
+
+	
 	if (*sss & 0x40000)
 		*sss = 0x7fff;
 	else if (*sss & 0x20000)
@@ -8846,56 +8831,82 @@ STRICTINLINE void tclod_2cycle_next(INT32* sss, INT32* sst, INT32 s, INT32 t, IN
 			*sst &= 0xffff;
 	}
 
-	
-	if ((lod & 0x4000) || lodclamp)
-		lod = 0x7fff;
-	else if (lod < min_level)
-		lod = min_level;
-						
-	magnify = (lod < 32) ? 1: 0;
-	l_tile =  log2table[(lod >> 5) & 0xff];
-	distant = ((lod & 0x6000) || (l_tile >= max_level)) ? 1 : 0;
-
-	*prelodfrac = ((lod << 3) >> l_tile) & 0xff;
-
-	
-	if(!other_modes.sharpen_tex_en && !other_modes.detail_tex_en)
+	if (dolod)
 	{
-		if (distant)
-			*prelodfrac = 0xff;
-		else if (magnify)
-			*prelodfrac = 0;
-	}
+		nextsw = (w + dwinc) >> 16;
+		nexts = (s + dsinc) >> 16;
+		nextt = (t + dtinc) >> 16;
+		nextys = (s + spans_dsdy) >> 16;
+		nextyt = (t + spans_dtdy) >> 16;
+		nextysw = (w + spans_dwdy) >> 16;
 
-	
-	
-
-	if(other_modes.sharpen_tex_en && magnify)
-		*prelodfrac |= 0x100;
-
-	if (other_modes.tex_lod_en)
-	{
-		if (distant)
-			l_tile = max_level;
-		if (!other_modes.detail_tex_en)
+		if (other_modes.persp_tex_en)
 		{
-			*t1 = (prim_tile + l_tile) & 7;
-			if (!(distant || (!other_modes.sharpen_tex_en && magnify)))
-				*t2 = (*t1 + 1) & 7;
-			else
-				*t2 = *t1;
+			tcdiv_persp(nexts, nextt, nextsw, &nexts, &nextt);
+			tcdiv_persp(nextys, nextyt, nextysw, &nextys, &nextyt);
 		}
-		else 
+		else
 		{
-			if (!magnify)
-				*t1 = (prim_tile + l_tile + 1);
-			else
-				*t1 = (prim_tile + l_tile);
-			*t1 &= 7;
-			if (!distant && !magnify)
-				*t2 = (prim_tile + l_tile + 2) & 7;
-			else
-				*t2 = (prim_tile + l_tile + 1) & 7;
+			tcdiv_nopersp(nexts, nextt, nextsw, &nexts, &nextt);
+			tcdiv_nopersp(nextys, nextyt, nextysw, &nextys, &nextyt);
+		}
+	
+		lodclamp = (initt & 0x60000) || (nextt & 0x60000) || (inits & 0x60000) || (nexts & 0x60000) || (nextys & 0x60000) || (nextyt & 0x60000);
+
+		tclod_4x17_to_15(inits & 0x1ffff, nexts & 0x1ffff, initt & 0x1ffff, nextt & 0x1ffff, 0, &lod);
+		tclod_4x17_to_15(inits & 0x1ffff, nextys & 0x1ffff, initt & 0x1ffff, nextyt & 0x1ffff, lod, &lod);
+
+		
+		if ((lod & 0x4000) || lodclamp)
+			lod = 0x7fff;
+		else if (lod < min_level)
+			lod = min_level;
+						
+		magnify = (lod < 32) ? 1: 0;
+		l_tile =  log2table[(lod >> 5) & 0xff];
+		distant = ((lod & 0x6000) || (l_tile >= max_level)) ? 1 : 0;
+
+		*prelodfrac = ((lod << 3) >> l_tile) & 0xff;
+
+		
+		if(!other_modes.sharpen_tex_en && !other_modes.detail_tex_en)
+		{
+			if (distant)
+				*prelodfrac = 0xff;
+			else if (magnify)
+				*prelodfrac = 0;
+		}
+
+		
+		
+
+		if(other_modes.sharpen_tex_en && magnify)
+			*prelodfrac |= 0x100;
+
+		if (other_modes.tex_lod_en)
+		{
+			if (distant)
+				l_tile = max_level;
+			if (!other_modes.detail_tex_en)
+			{
+				*t1 = (prim_tile + l_tile) & 7;
+				if (!(distant || (!other_modes.sharpen_tex_en && magnify)))
+					*t2 = (*t1 + 1) & 7;
+				else
+					*t2 = *t1;
+			}
+			else 
+			{
+				if (!magnify)
+					*t1 = (prim_tile + l_tile + 1);
+				else
+					*t1 = (prim_tile + l_tile);
+				*t1 &= 7;
+				if (!distant && !magnify)
+					*t2 = (prim_tile + l_tile + 2) & 7;
+				else
+					*t2 = (prim_tile + l_tile + 1) & 7;
+			}
 		}
 	}
 }
@@ -8915,47 +8926,12 @@ STRICTINLINE void tclod_1cycle_current(INT32* sss, INT32* sst, INT32 nexts, INT3
 	int lodclamp = 0;
 	INT32 lod = 0;
 	UINT32 l_tile = 0, magnify = 0, distant = 0;
-
-	
-	
-	if (!sigs->endspan || !sigs->longspan)
-	{
-		if ((sigs->preendspan && sigs->longspan) || (sigs->endspan && sigs->midspan))
-		{
-			farsw = (w - dwinc) >> 16;
-			fars = (s - dsinc) >> 16;
-			fart = (t - dtinc) >> 16;
-		}
-		else
-		{
-			farsw = (w + (dwinc << 1)) >> 16;
-			fars = (s + (dsinc << 1)) >> 16;
-			fart = (t + (dtinc << 1)) >> 16;
-		}
-	}
-	else
-	{
-		fart = (span[scanline + 1].t + dtinc) >> 16; 
-		fars = (span[scanline + 1].s + dsinc) >> 16; 
-		farsw = (span[scanline + 1].w + dwinc) >> 16;
-	}
-
-	if (other_modes.persp_tex_en)
-		tcdiv_persp(fars, fart, farsw, &fars, &fart);
-	else
-		tcdiv_nopersp(fars, fart, farsw, &fars, &fart);
-
-	lodclamp = (fart & 0x60000) || (nextt & 0x60000) || (fars & 0x60000) || (nexts & 0x60000);
-	
-	
-
-	tclod_4x17_to_15(nexts & 0x1ffff, fars & 0x1ffff, nextt & 0x1ffff, fart & 0x1ffff, 0, &lod);
-
-	
-	
-	
-	
 	int tempanded;
+
+	
+	
+	
+	
 	if (*sss & 0x40000)
 		*sss = 0x7fff;
 	else if (*sss & 0x20000)
@@ -8984,67 +8960,13 @@ STRICTINLINE void tclod_1cycle_current(INT32* sss, INT32* sst, INT32 nexts, INT3
 			*sst = 0x8000;
 		else
 			*sst &= 0xffff;
-	}	
-
-	
-	if ((lod & 0x4000) || lodclamp)
-		lod = 0x7fff;
-	else if (lod < min_level)
-		lod = min_level;
-						
-	magnify = (lod < 32) ? 1: 0;
-	l_tile =  log2table[(lod >> 5) & 0xff];
-	distant = ((lod & 0x6000) || (l_tile >= max_level)) ? 1 : 0;
-						
-	lod_frac = ((lod << 3) >> l_tile) & 0xff;
-
-	
-	if(!other_modes.sharpen_tex_en && !other_modes.detail_tex_en)
-	{
-		if (distant)
-			lod_frac = 0xff;
-		else if (magnify)
-			lod_frac = 0;
 	}
 
-	if(other_modes.sharpen_tex_en && magnify)
-		lod_frac |= 0x100;
-
-	
-	if (other_modes.tex_lod_en)
+	if (dolod)
 	{
-		if (distant)
-			l_tile = max_level;
-		if (!other_modes.detail_tex_en)
-		{
-			*t1 = (prim_tile + l_tile) & 7;
-		}
-		else 
-		{
-			if (!magnify)
-				*t1 = (prim_tile + l_tile + 1);
-			else
-				*t1 = (prim_tile + l_tile);
-			*t1 &= 7;
-		}
-	}
-
-}
-
-STRICTINLINE void tclod_1cycle_next(INT32* sss, INT32* sst, INT32 s, INT32 t, INT32 w, INT32 dsinc, INT32 dtinc, INT32 dwinc, INT32 scanline, INT32 prim_tile, INT32* t1, SPANSIGS* sigs, INT32* prelodfrac)
-{
-	int nexts, nextt, nextsw, fars, fart, farsw;
-	int lodclamp = 0;
-	INT32 lod = 0;
-	UINT32 l_tile = 0, magnify = 0, distant = 0;
-
-	if (!sigs->nextspan)
-	{
+		
 		if (!sigs->endspan || !sigs->longspan)
 		{
-			nextsw = (w + dwinc) >> 16;
-			nexts = (s + dsinc) >> 16;
-			nextt = (t + dtinc) >> 16;
 			if ((sigs->preendspan && sigs->longspan) || (sigs->endspan && sigs->midspan))
 			{
 				farsw = (w - dwinc) >> 16;
@@ -9060,62 +8982,77 @@ STRICTINLINE void tclod_1cycle_next(INT32* sss, INT32* sst, INT32 s, INT32 t, IN
 		}
 		else
 		{
-			nextt = span[scanline + 1].t;
-			nexts = span[scanline + 1].s;
-			nextsw = span[scanline + 1].w;
-			fart = (nextt + dtinc) >> 16; 
-			fars = (nexts + dsinc) >> 16; 
-			farsw = (nextsw + dwinc) >> 16;
-			nextt >>= 16;
-			nexts >>= 16;
-			nextsw >>= 16;
+			fart = (span[scanline + 1].t + dtinc) >> 16; 
+			fars = (span[scanline + 1].s + dsinc) >> 16; 
+			farsw = (span[scanline + 1].w + dwinc) >> 16;
 		}
-	}
-	else
-	{
-		if (sigs->longspan || sigs->midspan)
-		{
-			nextt = span[scanline + 1].t + dtinc;
-			nexts = span[scanline + 1].s + dsinc;
-			nextsw = span[scanline + 1].w + dwinc;
-			fart = (nextt + dtinc) >> 16; 
-			fars = (nexts + dsinc) >> 16; 
-			farsw = (nextsw + dwinc) >> 16;
-			nextt >>= 16;
-			nexts >>= 16;
-			nextsw >>= 16;
-		}
+
+		if (other_modes.persp_tex_en)
+			tcdiv_persp(fars, fart, farsw, &fars, &fart);
 		else
+			tcdiv_nopersp(fars, fart, farsw, &fars, &fart);
+
+		lodclamp = (fart & 0x60000) || (nextt & 0x60000) || (fars & 0x60000) || (nexts & 0x60000);
+		
+		
+
+		tclod_4x17_to_15(nexts & 0x1ffff, fars & 0x1ffff, nextt & 0x1ffff, fart & 0x1ffff, 0, &lod);
+
+
+		
+		if ((lod & 0x4000) || lodclamp)
+			lod = 0x7fff;
+		else if (lod < min_level)
+			lod = min_level;
+						
+		magnify = (lod < 32) ? 1: 0;
+		l_tile =  log2table[(lod >> 5) & 0xff];
+		distant = ((lod & 0x6000) || (l_tile >= max_level)) ? 1 : 0;
+						
+		lod_frac = ((lod << 3) >> l_tile) & 0xff;
+
+		
+		if(!other_modes.sharpen_tex_en && !other_modes.detail_tex_en)
 		{
-			nextsw = (w + dwinc) >> 16;
-			nexts = (s + dsinc) >> 16;
-			nextt = (t + dtinc) >> 16;
-			farsw = (w - dwinc) >> 16;
-			fars = (s - dsinc) >> 16;
-			fart = (t - dtinc) >> 16;
+			if (distant)
+				lod_frac = 0xff;
+			else if (magnify)
+				lod_frac = 0;
+		}
+
+		if(other_modes.sharpen_tex_en && magnify)
+			lod_frac |= 0x100;
+
+	
+		if (other_modes.tex_lod_en)
+		{
+			if (distant)
+				l_tile = max_level;
+			if (!other_modes.detail_tex_en)
+			{
+				*t1 = (prim_tile + l_tile) & 7;
+			}
+			else 
+			{
+				if (!magnify)
+					*t1 = (prim_tile + l_tile + 1);
+				else
+					*t1 = (prim_tile + l_tile);
+				*t1 &= 7;
+			}
 		}
 	}
+}
 
-	
-	if (other_modes.persp_tex_en)
-	{
-		tcdiv_persp(nexts, nextt, nextsw, &nexts, &nextt);
-		tcdiv_persp(fars, fart, farsw, &fars, &fart);
-	}
-	else
-	{
-		tcdiv_nopersp(nexts, nextt, nextsw, &nexts, &nextt);
-		tcdiv_nopersp(fars, fart, farsw, &fars, &fart);
-	}
-
-	lodclamp = (fart & 0x60000) || (nextt & 0x60000) || (fars & 0x60000) || (nexts & 0x60000);
-	
-	
-	tclod_4x17_to_15(nexts & 0x1ffff, fars & 0x1ffff, nextt & 0x1ffff, fart & 0x1ffff, 0, &lod);
-
-	
-	
+STRICTINLINE void tclod_1cycle_next(INT32* sss, INT32* sst, INT32 s, INT32 t, INT32 w, INT32 dsinc, INT32 dtinc, INT32 dwinc, INT32 scanline, INT32 prim_tile, INT32* t1, SPANSIGS* sigs, INT32* prelodfrac)
+{
+	int nexts, nextt, nextsw, fars, fart, farsw;
+	int lodclamp = 0;
+	INT32 lod = 0;
+	UINT32 l_tile = 0, magnify = 0, distant = 0;
 	int tempanded;
+
+	
 	if (*sss & 0x40000)
 		*sss = 0x7fff;
 	else if (*sss & 0x20000)
@@ -9146,45 +9083,123 @@ STRICTINLINE void tclod_1cycle_next(INT32* sss, INT32* sst, INT32 s, INT32 t, IN
 			*sst &= 0xffff;
 	}
 
-	
-	if ((lod & 0x4000) || lodclamp)
-		lod = 0x7fff;
-	else if (lod < min_level)
-		lod = min_level;
-					
-	magnify = (lod < 32) ? 1: 0;
-	l_tile =  log2table[(lod >> 5) & 0xff];
-	distant = ((lod & 0x6000) || (l_tile >= max_level)) ? 1 : 0;
-
-	*prelodfrac = ((lod << 3) >> l_tile) & 0xff;
-
-	
-	if(!other_modes.sharpen_tex_en && !other_modes.detail_tex_en)
+	if (dolod)
 	{
-		if (distant)
-			*prelodfrac = 0xff;
-		else if (magnify)
-			*prelodfrac = 0;
-	}
-
-	if(other_modes.sharpen_tex_en && magnify)
-		*prelodfrac |= 0x100;
-
-	if (other_modes.tex_lod_en)
-	{
-		if (distant)
-			l_tile = max_level;
-		if (!other_modes.detail_tex_en)
+		if (!sigs->nextspan)
 		{
-			*t1 = (prim_tile + l_tile) & 7;
-		}
-		else 
-		{
-			if (!magnify)
-				*t1 = (prim_tile + l_tile + 1);
+			if (!sigs->endspan || !sigs->longspan)
+			{
+				nextsw = (w + dwinc) >> 16;
+				nexts = (s + dsinc) >> 16;
+				nextt = (t + dtinc) >> 16;
+				if ((sigs->preendspan && sigs->longspan) || (sigs->endspan && sigs->midspan))
+				{
+					farsw = (w - dwinc) >> 16;
+					fars = (s - dsinc) >> 16;
+					fart = (t - dtinc) >> 16;
+				}
+				else
+				{
+					farsw = (w + (dwinc << 1)) >> 16;
+					fars = (s + (dsinc << 1)) >> 16;
+					fart = (t + (dtinc << 1)) >> 16;
+				}
+			}
 			else
-				*t1 = (prim_tile + l_tile);
-			*t1 &= 7;
+			{
+				nextt = span[scanline + 1].t;
+				nexts = span[scanline + 1].s;
+				nextsw = span[scanline + 1].w;
+				fart = (nextt + dtinc) >> 16; 
+				fars = (nexts + dsinc) >> 16; 
+				farsw = (nextsw + dwinc) >> 16;
+				nextt >>= 16;
+				nexts >>= 16;
+				nextsw >>= 16;
+			}
+		}
+		else
+		{
+			if (sigs->longspan || sigs->midspan)
+			{
+				nextt = span[scanline + 1].t + dtinc;
+				nexts = span[scanline + 1].s + dsinc;
+				nextsw = span[scanline + 1].w + dwinc;
+				fart = (nextt + dtinc) >> 16; 
+				fars = (nexts + dsinc) >> 16; 
+				farsw = (nextsw + dwinc) >> 16;
+				nextt >>= 16;
+				nexts >>= 16;
+				nextsw >>= 16;
+			}
+			else
+			{
+				nextsw = (w + dwinc) >> 16;
+				nexts = (s + dsinc) >> 16;
+				nextt = (t + dtinc) >> 16;
+				farsw = (w - dwinc) >> 16;
+				fars = (s - dsinc) >> 16;
+				fart = (t - dtinc) >> 16;
+			}
+		}
+
+	
+		if (other_modes.persp_tex_en)
+		{
+			tcdiv_persp(nexts, nextt, nextsw, &nexts, &nextt);
+			tcdiv_persp(fars, fart, farsw, &fars, &fart);
+		}
+		else
+		{
+			tcdiv_nopersp(nexts, nextt, nextsw, &nexts, &nextt);
+			tcdiv_nopersp(fars, fart, farsw, &fars, &fart);
+		}
+
+		lodclamp = (fart & 0x60000) || (nextt & 0x60000) || (fars & 0x60000) || (nexts & 0x60000);
+		
+		
+		tclod_4x17_to_15(nexts & 0x1ffff, fars & 0x1ffff, nextt & 0x1ffff, fart & 0x1ffff, 0, &lod);
+
+		
+		if ((lod & 0x4000) || lodclamp)
+			lod = 0x7fff;
+		else if (lod < min_level)
+			lod = min_level;
+					
+		magnify = (lod < 32) ? 1: 0;
+		l_tile =  log2table[(lod >> 5) & 0xff];
+		distant = ((lod & 0x6000) || (l_tile >= max_level)) ? 1 : 0;
+
+		*prelodfrac = ((lod << 3) >> l_tile) & 0xff;
+
+		
+		if(!other_modes.sharpen_tex_en && !other_modes.detail_tex_en)
+		{
+			if (distant)
+				*prelodfrac = 0xff;
+			else if (magnify)
+				*prelodfrac = 0;
+		}
+
+		if(other_modes.sharpen_tex_en && magnify)
+			*prelodfrac |= 0x100;
+
+		if (other_modes.tex_lod_en)
+		{
+			if (distant)
+				l_tile = max_level;
+			if (!other_modes.detail_tex_en)
+			{
+				*t1 = (prim_tile + l_tile) & 7;
+			}
+			else 
+			{
+				if (!magnify)
+					*t1 = (prim_tile + l_tile + 1);
+				else
+					*t1 = (prim_tile + l_tile);
+				*t1 &= 7;
+			}
 		}
 	}
 }
@@ -9301,7 +9316,6 @@ STRICTINLINE void tclod_copy(INT32* sss, INT32* sst, INT32 s, INT32 t, INT32 w, 
 STRICTINLINE void get_texel1_1cycle(INT32* s1, INT32* t1, INT32 s, INT32 t, INT32 w, INT32 dsinc, INT32 dtinc, INT32 dwinc, INT32 scanline, SPANSIGS* sigs)
 {
 	INT32 nexts, nextt, nextsw;
-	
 	
 	if (!sigs->endspan || !sigs->longspan)
 	{
