@@ -112,7 +112,8 @@ static int spans_da;
 static int spans_dz;
 static int spans_dzpix;
 
-static int spans_drdy, spans_dgdy, spans_dbdy, spans_dady, spans_dzdy;
+int spans_drdy, spans_dgdy, spans_dbdy, spans_dady, spans_dzdy;
+int spans_cdr, spans_cdg, spans_cdb, spans_cda, spans_cdz;
 
 static int spans_dsdy, spans_dtdy, spans_dwdy;
 
@@ -4482,7 +4483,7 @@ void render_spans_1cycle(int start, int end, int tilenum, int flip)
 		dwinc = -spans_dw;
 	}
 	if (other_modes.z_source_sel)
-		dzinc = spans_dz = spans_dzdy = 0;
+		dzinc = spans_cdz = spans_dzdy = 0;
 
 	int xinc = flip ? 1 : -1;
 
@@ -4686,7 +4687,7 @@ void render_spans_2cycle(int start, int end, int tilenum, int flip)
 	}
 
 	if (other_modes.z_source_sel)
-		dzinc = spans_dz = spans_dzdy = 0;
+		dzinc = spans_cdz = spans_dzdy = 0;
 
 	int xinc = flip ? 1 : -1;
 
@@ -5389,6 +5390,17 @@ static void edgewalker_for_prims(UINT32* ewdata)
 	spans_dbdy = dbdy & ~0x3fff;
 	spans_dady = dady & ~0x3fff;
 	spans_dzdy = dzdy & ~0x3ff;
+	
+	spans_drdy = SIGN13(spans_drdy >> 14);
+	spans_dgdy = SIGN13(spans_dgdy >> 14);
+	spans_dbdy = SIGN13(spans_dbdy >> 14);
+	spans_dady = SIGN13(spans_dady >> 14);
+	spans_dzdy = SIGN22(spans_dzdy >> 10);
+	spans_cdr = SIGN13(spans_dr >> 14);
+	spans_cdg = SIGN13(spans_dg >> 14);
+	spans_cdb = SIGN13(spans_db >> 14);
+	spans_cda = SIGN13(spans_da >> 14);
+	spans_cdz = SIGN22(spans_dz >> 10);
 	
 	spans_dsdy = dsdy & ~0x7fff;
 	spans_dtdy = dtdy & ~0x7fff;
@@ -8468,8 +8480,8 @@ STRICTINLINE void rgbaz_clipper(int sr, int sg, int sb, int sa, int *sz)
 
 STRICTINLINE void rgbaz_correct_tris(INT32 offx, INT32 offy, INT32* r, INT32* g, INT32* b, INT32* a, INT32* z)
 {
-	
-	
+
+
 	INT32 summand_xr, summand_yr, summand_xb, summand_yb, summand_xg, summand_yg, summand_xa, summand_ya;
 	INT32 summand_xz, summand_yz;
 	if (curpixel_cvg == 8)
@@ -8482,23 +8494,23 @@ STRICTINLINE void rgbaz_correct_tris(INT32 offx, INT32 offy, INT32* r, INT32* g,
 	}
 	else
 	{
-	summand_xr = offx * SIGN13(spans_dr >> 14);
-	summand_yr = offy * SIGN13(spans_drdy >> 14);
-	summand_xb = offx * SIGN13(spans_db >> 14);
-	summand_yb = offy * SIGN13(spans_dbdy >> 14);
-	summand_xg = offx * SIGN13(spans_dg >> 14);
-	summand_yg = offy * SIGN13(spans_dgdy >> 14);
-	summand_xa = offx * SIGN13(spans_da >> 14);
-	summand_ya = offy * SIGN13(spans_dady >> 14);
+		summand_xr = offx * spans_cdr;
+		summand_yr = offy * spans_drdy;
+		summand_xg = offx * spans_cdg;
+		summand_yg = offy * spans_dgdy;
+		summand_xb = offx * spans_cdb;
+		summand_yb = offy * spans_dbdy;
+		summand_xa = offx * spans_cda;
+		summand_ya = offy * spans_dady;
+	
+		summand_xz = offx * spans_cdz;
+		summand_yz = offy * spans_dzdy;
 
-	summand_xz = offx * SIGN22(spans_dz >> 10);
-	summand_yz = offy * SIGN22(spans_dzdy >> 10);
-
-	*r = ((*r << 2) + summand_xr + summand_yr) >> 4;
-	*g = ((*g << 2) + summand_xg + summand_yg) >> 4;
-	*b = ((*b << 2) + summand_xb + summand_yb) >> 4;
-	*a = ((*a << 2) + summand_xa + summand_ya) >> 4;
-	*z = (((*z << 2) + summand_xz + summand_yz) >> 5) & 0x7ffff;
+		*r = ((*r << 2) + summand_xr + summand_yr) >> 4;
+		*g = ((*g << 2) + summand_xg + summand_yg) >> 4;
+		*b = ((*b << 2) + summand_xb + summand_yb) >> 4;
+		*a = ((*a << 2) + summand_xa + summand_ya) >> 4;
+		*z = (((*z << 2) + summand_xz + summand_yz) >> 5) & 0x7ffff;
 	}
 }
 
