@@ -2004,7 +2004,9 @@ INLINE void precalculate_everything(void)
 		
 		
 		temppoint = norm_point_table[normout];
-		tempslope = norm_slope_table[normout] | ~0x3ff;
+		tempslope = norm_slope_table[normout];
+
+		tempslope = (tempslope | ~0x3ff) + 1;
 		
 		tlu_rcp_table[i] = (((tempslope * wnorm) >> 10) + temppoint) & 0x7fff;
 		
