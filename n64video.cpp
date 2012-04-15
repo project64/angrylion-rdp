@@ -927,6 +927,9 @@ int rdp_init()
 	
 	
 
+	memset(tile, 0, sizeof(tile));
+	
+
 	rdp_pipeline_crashed = 0;
 	memset(&onetimewarnings, 0, sizeof(onetimewarnings));
 
@@ -2144,7 +2147,7 @@ INLINE int blender_2cycle(UINT32* fr, UINT32* fg, UINT32* fb, int dith, int part
 	
 
 	inv_pixel_color.a = 0xff - *blender1b_a[0];
-	
+
 	blender_equation_cycle0(&r, &g, &b, special_bsel0);
 	
 
