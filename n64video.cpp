@@ -80,7 +80,6 @@ UINT32 double_stretch = 0;
 UINT32 blend_en = 0;
 UINT32 prewrap = 0;
 int dolod = 0;
-UINT32 Malloced = 0;
 int blshifta = 0, blshiftb = 0;
 UINT32 curpixel_memcvg = 0;
 UINT32 plim = 0x3fffff;
@@ -366,11 +365,9 @@ static int scfield = 0;
 static int sckeepodd = 0;
 int oldscyl = 0;
 
+UINT8 TMEM[0x1000]; 
 
-UINT8* TMEM = (UINT8*)0;
-
-#define tlut ((UINT16*)(TMEM+2048))
-
+#define tlut ((UINT16*)(&TMEM[0x800]))
 
 #define PIXELS_TO_BYTES(pix, siz) (((pix) << (siz)) >> 1)
 
@@ -924,14 +921,7 @@ int rdp_init()
 
 	rdp_set_other_modes(0, 0);
 	
-	TMEM = (UINT8*)malloc(0x1000);
-	if (!TMEM)
-		fatalerror("TMEM allocation failed");
-	else
-	{
-		memset(TMEM, 0, 0x1000);
-		Malloced = 1;
-	}
+	memset(TMEM, 0, 0x1000);
 
 	memset(hidden_bits, 0xff, sizeof(hidden_bits));
 	
@@ -7276,14 +7266,6 @@ STRICTINLINE void compute_cvg_noflip(INT32* majorx, INT32* minorx, INT32* invaly
 
 int rdp_close()
 {
-	if (TMEM != 0 && Malloced)
-		free(TMEM);
-
-	
-	
-	
-	TMEM = 0;
-	Malloced = 0;
 	return 0;
 }
 
