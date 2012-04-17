@@ -7140,13 +7140,9 @@ STRICTINLINE void blender_equation_cycle0(int* r, int* g, int* b, int bsel_speci
 		
 
 		
-			*r /= sum; 
+			*r /= sum;
 			*g /= sum; 
 			*b /= sum;
-
-			if (*r > 255) *r = 255;
-			if (*g > 255) *g = 255;
-			if (*b > 255) *b = 255;
 		
 	}
 	
@@ -7222,10 +7218,6 @@ STRICTINLINE void blender_equation_cycle1(int* r, int* g, int* b, int bsel_speci
 			*r /= sum; 
 			*g /= sum; 
 			*b /= sum;
-
-			if (*r > 255) *r = 255;
-			if (*g > 255) *g = 255;
-			if (*b > 255) *b = 255;
 		
 	}
 
