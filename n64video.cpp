@@ -80,7 +80,7 @@ UINT32 double_stretch = 0;
 UINT32 blend_en = 0;
 UINT32 prewrap = 0;
 int dolod = 0;
-int blshifta = 0, blshiftb = 0;
+int blshifta = 0, blshiftb = 0, pastblshifta = 0, pastblshiftb = 0;
 UINT32 curpixel_memcvg = 0;
 UINT32 plim = 0x3fffff;
 UINT32 idxlim16 = 0x1fffff;
@@ -417,6 +417,7 @@ INLINE int alpha_compare(INT32 comb_alpha);
 STRICTINLINE INT32 color_combiner_equation(INT32 a, INT32 b, INT32 c, INT32 d);
 STRICTINLINE INT32 alpha_combiner_equation(INT32 a, INT32 b, INT32 c, INT32 d);
 STRICTINLINE void blender_equation_cycle0(int* r, int* g, int* b, int bsel_special);
+STRICTINLINE void blender_equation_cycle0_2(int* r, int* g, int* b, int bsel_special);
 STRICTINLINE void blender_equation_cycle1(int* r, int* g, int* b, int bsel_special);
 STRICTINLINE UINT32 rightcvghex(UINT32 x, UINT32 fmask); 
 STRICTINLINE UINT32 leftcvghex(UINT32 x, UINT32 fmask);
@@ -2166,12 +2167,10 @@ INLINE int blender_2cycle(UINT32* fr, UINT32* fg, UINT32* fb, int dith, int part
 	
 	inv_pixel_color.a =  (~(*blender1b_a[0])) & 0xff;
 
-	blender_equation_cycle0(&r, &g, &b, special_bsel0);
+	blender_equation_cycle0_2(&r, &g, &b, special_bsel0);
+
 	
-	
-	memory_color.r = pre_memory_color.r;
-	memory_color.g = pre_memory_color.g;
-	memory_color.b = pre_memory_color.b;
+	memory_color = pre_memory_color;
 
 	blended_pixel_color.r = r;
 	blended_pixel_color.g = g;
@@ -2199,7 +2198,6 @@ INLINE int blender_2cycle(UINT32* fr, UINT32* fg, UINT32* fb, int dith, int part
 			blender_equation_cycle1(&r, &g, &b, special_bsel1);
 		}	
 	}
-	
 
 	
 
@@ -4838,9 +4836,9 @@ void render_spans_2cycle(int start, int end, int tilenum, int flip)
 			
 			
 			
-			memory_color.r = pre_memory_color.r;
-			memory_color.g = pre_memory_color.g;
-			memory_color.b = pre_memory_color.b;
+			memory_color = pre_memory_color;
+			pastblshifta = blshifta;
+			pastblshiftb = blshiftb;
 			r += drinc;
 			g += dginc;
 			b += dbinc;
@@ -7111,6 +7109,7 @@ STRICTINLINE void blender_equation_cycle0(int* r, int* g, int* b, int bsel_speci
 		blend1a = (blend1a >> blshifta) & 0x3C;
 		blend2a = (blend2a >> blshiftb) & 0x1C;
 		
+		
 		*r = (((*blender1a_r[0]) * blend1a)) + (((*blender2a_r[0]) * blend2a)) + ((*blender2a_r[0]) << 2);
 		*g = (((*blender1a_g[0]) * blend1a)) + (((*blender2a_g[0]) * blend2a)) + ((*blender2a_g[0]) << 2);
 		*b = (((*blender1a_b[0]) * blend1a)) + (((*blender2a_b[0]) * blend2a)) + ((*blender2a_b[0]) << 2);
@@ -7122,9 +7121,11 @@ STRICTINLINE void blender_equation_cycle0(int* r, int* g, int* b, int bsel_speci
 		*b = (((*blender1a_b[0]) * blend1a)) + (((*blender2a_b[0]) * blend2a)) + *blender2a_b[0];
 	}
 	
-	*r >>= 2;
-	*g >>= 2;
-	*b >>= 2;
+	
+	
+	*r = (*r >> 2) & 0x7ff;
+	*g = (*g >> 2) & 0x7ff;
+	*b = (*b >> 2) & 0x7ff;
 
 	if (other_modes.force_blend)
 	{
@@ -7148,8 +7149,34 @@ STRICTINLINE void blender_equation_cycle0(int* r, int* g, int* b, int bsel_speci
 			if (*b > 255) *b = 255;
 		
 	}
-
 	
+}
+
+STRICTINLINE void blender_equation_cycle0_2(int* r, int* g, int* b, int bsel_special)
+{
+	INT32 blend1a, blend2a;
+	blend1a = *blender1b_a[0] >> 3;
+	blend2a = *blender2b_a[0] >> 3;
+	
+	if (bsel_special)
+	{
+		blend1a = (blend1a >> pastblshifta) & 0x3C;
+		blend2a = (blend2a >> pastblshiftb) & 0x1C;
+		*r = (((*blender1a_r[0]) * blend1a)) + (((*blender2a_r[0]) * blend2a)) + ((*blender2a_r[0]) << 2);
+		*g = (((*blender1a_g[0]) * blend1a)) + (((*blender2a_g[0]) * blend2a)) + ((*blender2a_g[0]) << 2);
+		*b = (((*blender1a_b[0]) * blend1a)) + (((*blender2a_b[0]) * blend2a)) + ((*blender2a_b[0]) << 2);
+	}
+	else
+	{
+		*r = (((*blender1a_r[0]) * blend1a)) + (((*blender2a_r[0]) * blend2a)) + *blender2a_r[0];
+		*g = (((*blender1a_g[0]) * blend1a)) + (((*blender2a_g[0]) * blend2a)) + *blender2a_g[0];
+		*b = (((*blender1a_b[0]) * blend1a)) + (((*blender2a_b[0]) * blend2a)) + *blender2a_b[0];
+	}
+	
+	*r = (*r >> 5) & 0xff;
+	*g = (*g >> 5) & 0xff;
+	*b = (*b >> 5) & 0xff;
+
 }
 
 STRICTINLINE void blender_equation_cycle1(int* r, int* g, int* b, int bsel_special)
@@ -7175,9 +7202,9 @@ STRICTINLINE void blender_equation_cycle1(int* r, int* g, int* b, int bsel_speci
 		*b = (((*blender1a_b[1]) * blend1a)) + (((*blender2a_b[1]) * blend2a)) + *blender2a_b[1];
 	}
 
-	*r >>= 2;
-	*g >>= 2;
-	*b >>= 2;
+	*r = (*r >> 2) & 0x7ff;
+	*g = (*g >> 2) & 0x7ff;
+	*b = (*b >> 2) & 0x7ff;
 
 	if (other_modes.force_blend)
 	{
@@ -7430,7 +7457,7 @@ INLINE void fbread_4(UINT32 curpixel)
 INLINE void fbread2_4(UINT32 curpixel)
 {
 	pre_memory_color.r = pre_memory_color.g = pre_memory_color.b = 0;
-	memory_color.a = 0xe0;
+	pre_memory_color.a = 0xe0;
 	curpixel_memcvg = 7;
 }
 
@@ -7446,7 +7473,7 @@ INLINE void fbread2_8(UINT32 curpixel)
 {
 	UINT8 mem = RREADADDR8(fb_address + curpixel);
 	pre_memory_color.r = pre_memory_color.g = pre_memory_color.b = mem;
-	memory_color.a = 0xe0;
+	pre_memory_color.a = 0xe0;
 	curpixel_memcvg = 7;
 }
 
@@ -7503,12 +7530,12 @@ INLINE void fbread2_16(UINT32 curpixel)
 	if (other_modes.image_read_en)
 	{
 		curpixel_memcvg = lowbits;
-		memory_color.a = lowbits << 5;
+		pre_memory_color.a = lowbits << 5;
 	}
 	else
 	{
 		curpixel_memcvg = 7;
-		memory_color.a = 0xe0;
+		pre_memory_color.a = 0xe0;
 	}
 }
 
@@ -7539,12 +7566,12 @@ INLINE void fbread2_32(UINT32 curpixel)
 	if (other_modes.image_read_en)
 	{
 		curpixel_memcvg = (mem >> 5) & 7;
-		memory_color.a = (mem) & 0xe0;
+		pre_memory_color.a = (mem) & 0xe0;
 	}
 	else
 	{
 		curpixel_memcvg = 7;
-		memory_color.a = 0xe0;
+		pre_memory_color.a = 0xe0;
 	}
 }
 
