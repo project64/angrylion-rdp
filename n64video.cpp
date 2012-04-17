@@ -340,6 +340,7 @@ COLOR pixel_color;
 COLOR inv_pixel_color;
 COLOR blended_pixel_color;
 COLOR memory_color;
+COLOR pre_memory_color;
 
 UINT32 fill_color;		
 
@@ -433,6 +434,10 @@ INLINE void fbread_4(UINT32 num);
 INLINE void fbread_8(UINT32 num);
 INLINE void fbread_16(UINT32 num);
 INLINE void fbread_32(UINT32 num);
+INLINE void fbread2_4(UINT32 num);
+INLINE void fbread2_8(UINT32 num);
+INLINE void fbread2_16(UINT32 num);
+INLINE void fbread2_32(UINT32 num);
 STRICTINLINE UINT32 z_decompress(UINT32 rawz);
 STRICTINLINE UINT32 dz_decompress(UINT32 compresseddz);
 STRICTINLINE UINT32 dz_compress(UINT32 value);
@@ -518,6 +523,11 @@ static void (*vi_fetch_filter_func[2])(CCVG*, UINT32, UINT32, UINT32, UINT32, UI
 static void (*fbread_func[4])(UINT32) = 
 {
 	fbread_4, fbread_8, fbread_16, fbread_32
+};
+
+static void (*fbread2_func[4])(UINT32) =
+{
+	fbread2_4, fbread2_8, fbread2_16, fbread2_32
 };
 
 static void (*fbwrite_func[4])(UINT32, UINT32, UINT32, UINT32) = 
@@ -2106,22 +2116,31 @@ INLINE int blender_1cycle(UINT32* fr, UINT32* fg, UINT32* fb, int dith, int part
 	if (other_modes.antialias_en ? (!curpixel_cvg) : (!curpixel_cvbit))
 		return 0;
 
-	
-
-	dontblend = (partialreject && pixel_color.a >= 0xff);
-	if (!blend_en || dontblend)
+	if (other_modes.color_on_cvg && !prewrap)
 	{
-		r = *blender1a_r[0];
-		g = *blender1a_g[0];
-		b = *blender1a_b[0];
+		r = *blender2a_r[0];
+		g = *blender2a_g[0];
+		b = *blender2a_b[0];
 	}
 	else
 	{
-		inv_pixel_color.a = 0xff - *blender1b_a[0];
-		
-		
+		dontblend = (partialreject && pixel_color.a >= 0xff);
+		if (!blend_en || dontblend)
+		{
+			r = *blender1a_r[0];
+			g = *blender1a_g[0];
+			b = *blender1a_b[0];
+		}
+		else
+		{
+			inv_pixel_color.a =  (~(*blender1b_a[0])) & 0xff;
+			
+			
+			
+			
 
-		blender_equation_cycle0(&r, &g, &b, special_bsel);
+			blender_equation_cycle0(&r, &g, &b, special_bsel);
+		}
 	}
 
 	if (other_modes.rgb_dither_sel < 3)
@@ -2145,29 +2164,40 @@ INLINE int blender_2cycle(UINT32* fr, UINT32* fg, UINT32* fb, int dith, int part
 		return 0;
 
 	
-
-	inv_pixel_color.a = 0xff - *blender1b_a[0];
+	inv_pixel_color.a =  (~(*blender1b_a[0])) & 0xff;
 
 	blender_equation_cycle0(&r, &g, &b, special_bsel0);
 	
+	
+	memory_color = pre_memory_color;
 
 	blended_pixel_color.r = r;
 	blended_pixel_color.g = g;
 	blended_pixel_color.b = b;
 	blended_pixel_color.a = pixel_color.a;
-	
-	dontblend = (partialreject && pixel_color.a >= 0xff);
-	if (!blend_en || dontblend)
+
+	if (other_modes.color_on_cvg && !prewrap)
 	{
-		r = *blender1a_r[1];
-		g = *blender1a_g[1];
-		b = *blender1a_b[1];
+		r = *blender2a_r[1];
+		g = *blender2a_g[1];
+		b = *blender2a_b[1];
 	}
 	else
 	{
-		inv_pixel_color.a = 0xff - *blender1b_a[1];
-		blender_equation_cycle1(&r, &g, &b, special_bsel1);
+		dontblend = (partialreject && pixel_color.a >= 0xff);
+		if (!blend_en || dontblend)
+		{
+			r = *blender1a_r[1];
+			g = *blender1a_g[1];
+			b = *blender1a_b[1];
+		}
+		else
+		{
+			inv_pixel_color.a =  (~(*blender1b_a[1])) & 0xff;
+			blender_equation_cycle1(&r, &g, &b, special_bsel1);
+		}	
 	}
+	
 
 	
 
@@ -4628,7 +4658,7 @@ void render_spans_1cycle(int start, int end, int tilenum, int flip)
 void render_spans_2cycle(int start, int end, int tilenum, int flip)
 {
 	
-	void (*fbread_ptr)(UINT32) = fbread_func[fb_size];
+	void (*fbread_ptr)(UINT32) = fbread2_func[fb_size];
 	void (*fbwrite_ptr)(UINT32, UINT32, UINT32, UINT32) = fbwrite_func[fb_size];
 
 	UINT32 zb = zb_address >> 1;
@@ -4806,6 +4836,7 @@ void render_spans_2cycle(int start, int end, int tilenum, int flip)
 			
 			
 			
+			memory_color = pre_memory_color;
 			r += drinc;
 			g += dginc;
 			b += dbinc;
@@ -7067,12 +7098,13 @@ STRICTINLINE INT32 alpha_combiner_equation(INT32 a, INT32 b, INT32 c, INT32 d)
 STRICTINLINE void blender_equation_cycle0(int* r, int* g, int* b, int bsel_special)
 {
 	INT32 blend1a, blend2a;
+	UINT32 sum;
 	blend1a = *blender1b_a[0] >> 3;
 	blend2a = *blender2b_a[0] >> 3;
 	
 	if (bsel_special)
 	{
-		blend1a = (blend1a >> blshifta) & 0x1C;
+		blend1a = (blend1a >> blshifta) & 0x3C;
 		blend2a = (blend2a >> blshiftb) & 0x1C;
 		
 		*r = (((*blender1a_r[0]) * blend1a)) + (((*blender2a_r[0]) * blend2a)) + ((*blender2a_r[0]) << 2);
@@ -7086,8 +7118,6 @@ STRICTINLINE void blender_equation_cycle0(int* r, int* g, int* b, int bsel_speci
 		*b = (((*blender1a_b[0]) * blend1a)) + (((*blender2a_b[0]) * blend2a)) + *blender2a_b[0];
 	}
 	
-	UINT32 sum = ((blend1a >> 2) + (blend2a >> 2) + 1) & 0xf;
-
 	*r >>= 2;
 	*g >>= 2;
 	*b >>= 2;
@@ -7100,30 +7130,34 @@ STRICTINLINE void blender_equation_cycle0(int* r, int* g, int* b, int bsel_speci
 	}
 	else
 	{
-		if (sum)
-		{
+		sum = ((blend1a >> 2) + (blend2a >> 2) + 1) & 0xf;
+		
+		
+
+		
 			*r /= sum; 
 			*g /= sum; 
 			*b /= sum;
-		}
-		else
-			*r = *g = *b = 0xff;
+
+			if (*r > 255) *r = 255;
+			if (*g > 255) *g = 255;
+			if (*b > 255) *b = 255;
+		
 	}
 
-	if (*r > 255) *r = 255;
-	if (*g > 255) *g = 255;
-	if (*b > 255) *b = 255;
+	
 }
 
 STRICTINLINE void blender_equation_cycle1(int* r, int* g, int* b, int bsel_special)
 {
 	INT32 blend1a, blend2a;
+	UINT32 sum;
 	blend1a = *blender1b_a[1] >> 3;
 	blend2a = *blender2b_a[1] >> 3;
 	
 	if (bsel_special)
 	{
-		blend1a = (blend1a >> blshifta) & 0x1C;
+		blend1a = (blend1a >> blshifta) & 0x3C;
 		blend2a = (blend2a >> blshiftb) & 0x1C;
 		
 		*r = (((*blender1a_r[1]) * blend1a)) + (((*blender2a_r[1]) * blend2a)) + ((*blender2a_r[1]) << 2);
@@ -7137,8 +7171,6 @@ STRICTINLINE void blender_equation_cycle1(int* r, int* g, int* b, int bsel_speci
 		*b = (((*blender1a_b[1]) * blend1a)) + (((*blender2a_b[1]) * blend2a)) + *blender2a_b[1];
 	}
 
-	UINT32 sum = ((blend1a >> 2) + (blend2a >> 2) + 1) & 0xf;
-
 	*r >>= 2;
 	*g >>= 2;
 	*b >>= 2;
@@ -7151,19 +7183,21 @@ STRICTINLINE void blender_equation_cycle1(int* r, int* g, int* b, int bsel_speci
 	}
 	else
 	{
-		if (sum)
-		{
+		sum = ((blend1a >> 2) + (blend2a >> 2) + 1) & 0xf;
+		
+		
+
+		
 			*r /= sum; 
 			*g /= sum; 
 			*b /= sum;
-		}
-		else
-			*r = *g = *b = 0xff;
+
+			if (*r > 255) *r = 255;
+			if (*g > 255) *g = 255;
+			if (*b > 255) *b = 255;
+		
 	}
 
-	if (*r > 255) *r = 255;
-	if (*g > 255) *g = 255;
-	if (*b > 255) *b = 255;
 }
 
 
@@ -7316,10 +7350,7 @@ INLINE void fbwrite_16(UINT32 curpixel, UINT32 r, UINT32 g, UINT32 b)
 
 	if (fb_format == FORMAT_RGBA)
 	{
-		if (other_modes.color_on_cvg && !prewrap)
-			finalcolor = RREADIDX16(fb) & 0xfffe;
-		else
-			finalcolor = ((r >> 3) << 11) | ((g >> 3) << 6) | ((b >> 3) << 1);
+		finalcolor = ((r >> 3) << 11) | ((g >> 3) << 6) | ((b >> 3) << 1);
 	}
 	else
 	{
@@ -7339,14 +7370,9 @@ INLINE void fbwrite_32(UINT32 curpixel, UINT32 r, UINT32 g, UINT32 b)
 	INT32 finalcolor;
 	INT32 finalcvg = finalize_spanalpha();
 		
-	if (other_modes.color_on_cvg && !prewrap)
-	{
-		finalcolor = RREADIDX32(fb) & 0xffffff00;
-	}
-	else
-		finalcolor = (r << 24) | (g << 16) | (b << 8);
-
+	finalcolor = (r << 24) | (g << 16) | (b << 8);
 	finalcolor |= (finalcvg << 5);
+
 	RWRITEIDX32(fb, finalcolor);
 
 	
@@ -7389,7 +7415,7 @@ INLINE void fbfill_32(UINT32 curpixel)
 	HWRITEADDR8(hb + 1, (fill_color & 0x1) ? 3 : 0);
 }
 
-STRICTINLINE void fbread_4(UINT32 curpixel)
+INLINE void fbread_4(UINT32 curpixel)
 {
 	memory_color.r = memory_color.g = memory_color.b = 0;
 	
@@ -7397,7 +7423,14 @@ STRICTINLINE void fbread_4(UINT32 curpixel)
 	memory_color.a = 0xe0;
 }
 
-STRICTINLINE void fbread_8(UINT32 curpixel)
+INLINE void fbread2_4(UINT32 curpixel)
+{
+	pre_memory_color.r = pre_memory_color.g = pre_memory_color.b = 0;
+	memory_color.a = 0xe0;
+	curpixel_memcvg = 7;
+}
+
+INLINE void fbread_8(UINT32 curpixel)
 {
 	UINT8 mem = RREADADDR8(fb_address + curpixel);
 	memory_color.r = memory_color.g = memory_color.b = mem;
@@ -7405,7 +7438,15 @@ STRICTINLINE void fbread_8(UINT32 curpixel)
 	memory_color.a = 0xe0;
 }
 
-STRICTINLINE void fbread_16(UINT32 curpixel)
+INLINE void fbread2_8(UINT32 curpixel)
+{
+	UINT8 mem = RREADADDR8(fb_address + curpixel);
+	pre_memory_color.r = pre_memory_color.g = pre_memory_color.b = mem;
+	memory_color.a = 0xe0;
+	curpixel_memcvg = 7;
+}
+
+INLINE void fbread_16(UINT32 curpixel)
 {
 	UINT16 fword = RREADIDX16((fb_address >> 1) + curpixel);
 	UINT8 hbyte = HREADADDR8((fb_address >> 1) + curpixel);
@@ -7436,12 +7477,61 @@ STRICTINLINE void fbread_16(UINT32 curpixel)
 	}
 }
 
-STRICTINLINE void fbread_32(UINT32 curpixel)
+INLINE void fbread2_16(UINT32 curpixel)
+{
+	UINT16 fword = RREADIDX16((fb_address >> 1) + curpixel);
+	UINT8 hbyte = HREADADDR8((fb_address >> 1) + curpixel);
+	UINT8 lowbits;
+
+	if (fb_format == FORMAT_RGBA)
+	{
+		pre_memory_color.r = GET_HI(fword);
+		pre_memory_color.g = GET_MED(fword);
+		pre_memory_color.b = GET_LOW(fword);
+		lowbits = ((fword & 1) << 2) | (hbyte & 3);
+	}
+	else
+	{
+		pre_memory_color.r = pre_memory_color.g = pre_memory_color.b = fword >> 8;
+		lowbits = (fword >> 5) & 7;
+	}
+
+	if (other_modes.image_read_en)
+	{
+		curpixel_memcvg = lowbits;
+		memory_color.a = lowbits << 5;
+	}
+	else
+	{
+		curpixel_memcvg = 7;
+		memory_color.a = 0xe0;
+	}
+}
+
+INLINE void fbread_32(UINT32 curpixel)
 {
 	UINT32 mem = RREADIDX32((fb_address >> 2) + curpixel);
 	memory_color.r = (mem >> 24) & 0xff;
 	memory_color.g = (mem >> 16) & 0xff;
 	memory_color.b = (mem >> 8) & 0xff;
+	if (other_modes.image_read_en)
+	{
+		curpixel_memcvg = (mem >> 5) & 7;
+		memory_color.a = (mem) & 0xe0;
+	}
+	else
+	{
+		curpixel_memcvg = 7;
+		memory_color.a = 0xe0;
+	}
+}
+
+INLINE void fbread2_32(UINT32 curpixel)
+{
+	UINT32 mem = RREADIDX32((fb_address >> 2) + curpixel);
+	pre_memory_color.r = (mem >> 24) & 0xff;
+	pre_memory_color.g = (mem >> 16) & 0xff;
+	pre_memory_color.b = (mem >> 8) & 0xff;
 	if (other_modes.image_read_en)
 	{
 		curpixel_memcvg = (mem >> 5) & 7;
