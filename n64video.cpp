@@ -2169,7 +2169,9 @@ INLINE int blender_2cycle(UINT32* fr, UINT32* fg, UINT32* fb, int dith, int part
 	blender_equation_cycle0(&r, &g, &b, special_bsel0);
 	
 	
-	memory_color = pre_memory_color;
+	memory_color.r = pre_memory_color.r;
+	memory_color.g = pre_memory_color.g;
+	memory_color.b = pre_memory_color.b;
 
 	blended_pixel_color.r = r;
 	blended_pixel_color.g = g;
@@ -4836,7 +4838,9 @@ void render_spans_2cycle(int start, int end, int tilenum, int flip)
 			
 			
 			
-			memory_color = pre_memory_color;
+			memory_color.r = pre_memory_color.r;
+			memory_color.g = pre_memory_color.g;
+			memory_color.b = pre_memory_color.b;
 			r += drinc;
 			g += dginc;
 			b += dbinc;
