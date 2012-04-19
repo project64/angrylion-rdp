@@ -4254,7 +4254,7 @@ STRICTINLINE void texture_pipeline_cycle(COLOR* TEX, COLOR* prev, INT32 SSS, INT
 		invtf <<= 3;
 		sfrac <<= 3;
 		tfrac <<= 3;
-
+		
 		if (bilerp)
 		{
 			
@@ -4269,34 +4269,34 @@ STRICTINLINE void texture_pipeline_cycle(COLOR* TEX, COLOR* prev, INT32 SSS, INT
 				{
 				if (upper)
 				{
-					TEX->r = prev->b + (((((prev->r * (t2.r - t3.r)) + (prev->g * (t1.r - t3.r))) & ~0x3f) + 0x80) >> 8);	
-					TEX->g = prev->b + (((((prev->r * (t2.g - t3.g)) + (prev->g * (t1.g - t3.g))) & ~0x3f) + 0x80) >> 8);																		
-					TEX->b = prev->b + (((((prev->r * (t2.b - t3.b)) + (prev->g * (t1.b - t3.b))) & ~0x3f) + 0x80) >> 8);																
-					TEX->a = prev->b + (((((prev->r * (t2.a - t3.a)) + (prev->g * (t1.a - t3.a))) & ~0x3f) + 0x80) >> 8);
+					TEX->r = prev->b + ((((prev->r * (t2.r - t3.r)) + (prev->g * (t1.r - t3.r))) + 0x80) >> 8);	
+					TEX->g = prev->b + ((((prev->r * (t2.g - t3.g)) + (prev->g * (t1.g - t3.g))) + 0x80) >> 8);																		
+					TEX->b = prev->b + ((((prev->r * (t2.b - t3.b)) + (prev->g * (t1.b - t3.b))) + 0x80) >> 8);																
+					TEX->a = prev->b + ((((prev->r * (t2.a - t3.a)) + (prev->g * (t1.a - t3.a))) + 0x80) >> 8);
 				}
 				else
 				{
-					TEX->r = prev->b + (((((prev->r * (t1.r - t0.r)) + (prev->g * (t2.r - t0.r))) & ~0x3f) + 0x80) >> 8);											
-					TEX->g = prev->b + (((((prev->r * (t1.g - t0.g)) + (prev->g * (t2.g - t0.g))) & ~0x3f) + 0x80) >> 8);											
-					TEX->b = prev->b + (((((prev->r * (t1.b - t0.b)) + (prev->g * (t2.b - t0.b))) & ~0x3f) + 0x80) >> 8);									
-					TEX->a = prev->b + (((((prev->r * (t1.a - t0.a)) + (prev->g * (t2.a - t0.a))) & ~0x3f) + 0x80) >> 8);
+					TEX->r = prev->b + ((((prev->r * (t1.r - t0.r)) + (prev->g * (t2.r - t0.r))) + 0x80) >> 8);											
+					TEX->g = prev->b + ((((prev->r * (t1.g - t0.g)) + (prev->g * (t2.g - t0.g))) + 0x80) >> 8);											
+					TEX->b = prev->b + ((((prev->r * (t1.b - t0.b)) + (prev->g * (t2.b - t0.b))) + 0x80) >> 8);									
+					TEX->a = prev->b + ((((prev->r * (t1.a - t0.a)) + (prev->g * (t2.a - t0.a))) + 0x80) >> 8);
 				}
 				}
 				else
 				{
 				if (upper)
 				{
-					TEX->r = t3.r + (((((invsf * (t2.r - t3.r)) + (invtf * (t1.r - t3.r))) & ~0x3f) + 0x80) >> 8);	
-					TEX->g = t3.g + (((((invsf * (t2.g - t3.g)) + (invtf * (t1.g - t3.g))) & ~0x3f) + 0x80) >> 8);																		
-					TEX->b = t3.b + (((((invsf * (t2.b - t3.b)) + (invtf * (t1.b - t3.b))) & ~0x3f) + 0x80) >> 8);																
-					TEX->a = t3.a + (((((invsf * (t2.a - t3.a)) + (invtf * (t1.a - t3.a))) & ~0x3f) + 0x80) >> 8);
+					TEX->r = t3.r + ((((invsf * (t2.r - t3.r)) + (invtf * (t1.r - t3.r))) + 0x80) >> 8);	
+					TEX->g = t3.g + ((((invsf * (t2.g - t3.g)) + (invtf * (t1.g - t3.g))) + 0x80) >> 8);																		
+					TEX->b = t3.b + ((((invsf * (t2.b - t3.b)) + (invtf * (t1.b - t3.b))) + 0x80) >> 8);																
+					TEX->a = t3.a + ((((invsf * (t2.a - t3.a)) + (invtf * (t1.a - t3.a))) + 0x80) >> 8);
 				}
 				else
 				{
-					TEX->r = t0.r + (((((sfrac * (t1.r - t0.r)) + (tfrac * (t2.r - t0.r))) & ~0x3f) + 0x80) >> 8);											
-					TEX->g = t0.g + (((((sfrac * (t1.g - t0.g)) + (tfrac * (t2.g - t0.g))) & ~0x3f) + 0x80) >> 8);											
-					TEX->b = t0.b + (((((sfrac * (t1.b - t0.b)) + (tfrac * (t2.b - t0.b))) & ~0x3f) + 0x80) >> 8);									
-					TEX->a = t0.a + (((((sfrac * (t1.a - t0.a)) + (tfrac * (t2.a - t0.a))) & ~0x3f) + 0x80) >> 8);
+					TEX->r = t0.r + ((((sfrac * (t1.r - t0.r)) + (tfrac * (t2.r - t0.r))) + 0x80) >> 8);											
+					TEX->g = t0.g + ((((sfrac * (t1.g - t0.g)) + (tfrac * (t2.g - t0.g))) + 0x80) >> 8);											
+					TEX->b = t0.b + ((((sfrac * (t1.b - t0.b)) + (tfrac * (t2.b - t0.b))) + 0x80) >> 8);									
+					TEX->a = t0.a + ((((sfrac * (t1.a - t0.a)) + (tfrac * (t2.a - t0.a))) + 0x80) >> 8);
 				}
 				}
 				TEX->r &= 0x1ff;
@@ -4344,9 +4344,9 @@ STRICTINLINE void texture_pipeline_cycle(COLOR* TEX, COLOR* prev, INT32 SSS, INT
 			t0.r = SIGN9(t0.r);
 			t0.g = SIGN9(t0.g); 
 			t0.b = SIGN9(t0.b);
-			TEX->r = t0.b + (((((newk0 - invk0) * t0.g) & ~0x3f) + 0x80) >> 8);
-			TEX->g = t0.b + (((((newk1 - invk1) * t0.r + (newk2 - invk2) * t0.g) & ~0x3f) + 0x80) >> 8);
-			TEX->b = t0.b + (((((newk3 - invk3) * t0.r) & ~0x3f) + 0x80) >> 8);
+			TEX->r = t0.b + ((((newk0 - invk0) * t0.g) + 0x80) >> 8);
+			TEX->g = t0.b + ((((newk1 - invk1) * t0.r + (newk2 - invk2) * t0.g) + 0x80) >> 8);
+			TEX->b = t0.b + ((((newk3 - invk3) * t0.r) + 0x80) >> 8);
 			TEX->a = t0.b;
 			TEX->r &= 0x1ff;
 			TEX->g &= 0x1ff;
@@ -4393,9 +4393,9 @@ STRICTINLINE void texture_pipeline_cycle(COLOR* TEX, COLOR* prev, INT32 SSS, INT
 			t0.r = SIGN9(t0.r);
 			t0.g = SIGN9(t0.g); 
 			t0.b = SIGN9(t0.b);
-			TEX->r = t0.b + (((((newk0 - invk0) * t0.g) & ~0x3f) + 0x80) >> 8);
-			TEX->g = t0.b + (((((newk1 - invk1) * t0.r + (newk2 - invk2) * t0.g) & ~0x3f) + 0x80) >> 8);
-			TEX->b = t0.b + (((((newk3 - invk3) * t0.r) & ~0x3f) + 0x80) >> 8);
+			TEX->r = t0.b + ((((newk0 - invk0) * t0.g) + 0x80) >> 8);
+			TEX->g = t0.b + ((((newk1 - invk1) * t0.r + (newk2 - invk2) * t0.g) + 0x80) >> 8);
+			TEX->b = t0.b + ((((newk3 - invk3) * t0.r) + 0x80) >> 8);
 			TEX->a = t0.b;
 			TEX->r &= 0x1ff;
 			TEX->g &= 0x1ff;
