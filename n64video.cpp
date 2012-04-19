@@ -4825,7 +4825,6 @@ void render_spans_2cycle(int start, int end, int tilenum, int flip)
 			fbread_ptr(curpixel);
 			if (z_compare(zbcur, zhbcur, sz, dzpix, dzpixenc))
 			{
-				
 				if (blender_2cycle(&fir, &fig, &fib, cdith, partialreject, bsel0, bsel1))
 				{
 					fbwrite_ptr(curpixel, fir, fig, fib);
@@ -4833,6 +4832,7 @@ void render_spans_2cycle(int start, int end, int tilenum, int flip)
 						z_store(zbcur, zhbcur, sz, dzpixenc);
 				}
 			}
+			
 			
 			
 			
@@ -7103,29 +7103,24 @@ STRICTINLINE void blender_equation_cycle0(int* r, int* g, int* b, int bsel_speci
 	UINT32 sum;
 	blend1a = *blender1b_a[0] >> 3;
 	blend2a = *blender2b_a[0] >> 3;
+
+	int mulb;
+    
+	
 	
 	if (bsel_special)
 	{
 		blend1a = (blend1a >> blshifta) & 0x3C;
-		blend2a = (blend2a >> blshiftb) & 0x1C;
-		
-		
-		*r = (((*blender1a_r[0]) * blend1a)) + (((*blender2a_r[0]) * blend2a)) + ((*blender2a_r[0]) << 2);
-		*g = (((*blender1a_g[0]) * blend1a)) + (((*blender2a_g[0]) * blend2a)) + ((*blender2a_g[0]) << 2);
-		*b = (((*blender1a_b[0]) * blend1a)) + (((*blender2a_b[0]) * blend2a)) + ((*blender2a_b[0]) << 2);
-	}
-	else
-	{
-		*r = (((*blender1a_r[0]) * blend1a)) + (((*blender2a_r[0]) * blend2a)) + *blender2a_r[0];
-		*g = (((*blender1a_g[0]) * blend1a)) + (((*blender2a_g[0]) * blend2a)) + *blender2a_g[0];
-		*b = (((*blender1a_b[0]) * blend1a)) + (((*blender2a_b[0]) * blend2a)) + *blender2a_b[0];
+		blend2a = (blend2a >> blshiftb) | 3;
 	}
 	
+	mulb = blend2a + 1;
+	*r = (((*blender1a_r[0]) * blend1a + (*blender2a_r[0]) * mulb) >> 2) & 0x7ff;
+	*g = (((*blender1a_g[0]) * blend1a + (*blender2a_g[0]) * mulb) >> 2) & 0x7ff;
+	*b = (((*blender1a_b[0]) * blend1a + (*blender2a_b[0]) * mulb) >> 2) & 0x7ff;
 	
 	
-	*r = (*r >> 2) & 0x7ff;
-	*g = (*g >> 2) & 0x7ff;
-	*b = (*b >> 2) & 0x7ff;
+
 
 	if (other_modes.force_blend)
 	{
@@ -7135,10 +7130,10 @@ STRICTINLINE void blender_equation_cycle0(int* r, int* g, int* b, int bsel_speci
 	}
 	else
 	{
-		sum = ((blend1a >> 2) + (blend2a >> 2) + 1) & 0xf;
+		sum = (blend1a >> 2) + (blend2a >> 2) + 1;
 		
 		
-
+		
 		
 			*r /= sum;
 			*g /= sum; 
@@ -7153,26 +7148,18 @@ STRICTINLINE void blender_equation_cycle0_2(int* r, int* g, int* b, int bsel_spe
 	INT32 blend1a, blend2a;
 	blend1a = *blender1b_a[0] >> 3;
 	blend2a = *blender2b_a[0] >> 3;
-	
+
+	int mulb;
 	if (bsel_special)
 	{
 		blend1a = (blend1a >> pastblshifta) & 0x3C;
-		blend2a = (blend2a >> pastblshiftb) & 0x1C;
-		*r = (((*blender1a_r[0]) * blend1a)) + (((*blender2a_r[0]) * blend2a)) + ((*blender2a_r[0]) << 2);
-		*g = (((*blender1a_g[0]) * blend1a)) + (((*blender2a_g[0]) * blend2a)) + ((*blender2a_g[0]) << 2);
-		*b = (((*blender1a_b[0]) * blend1a)) + (((*blender2a_b[0]) * blend2a)) + ((*blender2a_b[0]) << 2);
-	}
-	else
-	{
-		*r = (((*blender1a_r[0]) * blend1a)) + (((*blender2a_r[0]) * blend2a)) + *blender2a_r[0];
-		*g = (((*blender1a_g[0]) * blend1a)) + (((*blender2a_g[0]) * blend2a)) + *blender2a_g[0];
-		*b = (((*blender1a_b[0]) * blend1a)) + (((*blender2a_b[0]) * blend2a)) + *blender2a_b[0];
+		blend2a = (blend2a >> pastblshiftb) | 3;
 	}
 	
-	*r = (*r >> 5) & 0xff;
-	*g = (*g >> 5) & 0xff;
-	*b = (*b >> 5) & 0xff;
-
+	mulb = blend2a + 1;
+	*r = (((*blender1a_r[0]) * blend1a + (*blender2a_r[0]) * mulb) >> 5) & 0xff;
+	*g = (((*blender1a_g[0]) * blend1a + (*blender2a_g[0]) * mulb) >> 5) & 0xff;
+	*b = (((*blender1a_b[0]) * blend1a + (*blender2a_b[0]) * mulb) >> 5) & 0xff;
 }
 
 STRICTINLINE void blender_equation_cycle1(int* r, int* g, int* b, int bsel_special)
@@ -7181,26 +7168,18 @@ STRICTINLINE void blender_equation_cycle1(int* r, int* g, int* b, int bsel_speci
 	UINT32 sum;
 	blend1a = *blender1b_a[1] >> 3;
 	blend2a = *blender2b_a[1] >> 3;
-	
+
+	int mulb;
 	if (bsel_special)
 	{
 		blend1a = (blend1a >> blshifta) & 0x3C;
-		blend2a = (blend2a >> blshiftb) & 0x1C;
-		
-		*r = (((*blender1a_r[1]) * blend1a)) + (((*blender2a_r[1]) * blend2a)) + ((*blender2a_r[1]) << 2);
-		*g = (((*blender1a_g[1]) * blend1a)) + (((*blender2a_g[1]) * blend2a)) + ((*blender2a_g[1]) << 2);
-		*b = (((*blender1a_b[1]) * blend1a)) + (((*blender2a_b[1]) * blend2a)) + ((*blender2a_b[1]) << 2);
+		blend2a = (blend2a >> blshiftb) | 3;
 	}
-	else
-	{
-		*r = (((*blender1a_r[1]) * blend1a)) + (((*blender2a_r[1]) * blend2a)) + *blender2a_r[1];
-		*g = (((*blender1a_g[1]) * blend1a)) + (((*blender2a_g[1]) * blend2a)) + *blender2a_g[1];
-		*b = (((*blender1a_b[1]) * blend1a)) + (((*blender2a_b[1]) * blend2a)) + *blender2a_b[1];
-	}
-
-	*r = (*r >> 2) & 0x7ff;
-	*g = (*g >> 2) & 0x7ff;
-	*b = (*b >> 2) & 0x7ff;
+	
+	mulb = blend2a + 1;
+	*r = (((*blender1a_r[1]) * blend1a + (*blender2a_r[1]) * mulb) >> 2) & 0x7ff;
+	*g = (((*blender1a_g[1]) * blend1a + (*blender2a_g[1]) * mulb) >> 2) & 0x7ff;
+	*b = (((*blender1a_b[1]) * blend1a + (*blender2a_b[1]) * mulb) >> 2) & 0x7ff;
 
 	if (other_modes.force_blend)
 	{
@@ -7210,15 +7189,11 @@ STRICTINLINE void blender_equation_cycle1(int* r, int* g, int* b, int bsel_speci
 	}
 	else
 	{
-		sum = ((blend1a >> 2) + (blend2a >> 2) + 1) & 0xf;
-		
-		
+		sum = (blend1a >> 2) + (blend2a >> 2) + 1;
 
-		
-			*r /= sum; 
-			*g /= sum; 
-			*b /= sum;
-		
+		*r /= sum; 
+		*g /= sum; 
+		*b /= sum;
 	}
 
 }
@@ -9474,7 +9449,7 @@ STRICTINLINE void get_nexttexel0_2cycle(INT32* s1, INT32* t1, INT32 s, INT32 t, 
 	nextsw = (w + dwinc) >> 16;
 	nexts = (s + dsinc) >> 16;
 	nextt = (t + dtinc) >> 16;
-	
+
 	if (other_modes.persp_tex_en)
 		tcdiv_persp(nexts, nextt, nextsw, s1, t1);
 	else
