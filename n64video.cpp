@@ -4453,9 +4453,9 @@ void render_spans_1cycle(int start, int end, int tilenum, int flip)
 	void (*fbread_ptr)(UINT32) = fbread_func[fb_size];
 	void (*fbwrite_ptr)(UINT32, UINT32, UINT32, UINT32) = fbwrite_func[fb_size];
 
-	UINT32 zb = zb_address >> 1;
-	UINT32 zhb = zb;
-	UINT32 zbcur, zhbcur;
+	int zb = zb_address >> 1;
+	int zhb = zb;
+	int zbcur, zhbcur;
 	UINT8 offx = 0, offy = 0;
 	SPANSIGS sigs;
 		
@@ -4508,7 +4508,7 @@ void render_spans_1cycle(int start, int end, int tilenum, int flip)
 	int sss = 0, sst = 0;
 	INT32 prelodfrac;
 	int curpixel = 0;
-	int x, fb_index, length, scdiff;
+	int x, length, scdiff;
 	UINT32 fir, fig, fib;
 					
 	for (i = start; i <= end; i++)
@@ -4525,8 +4525,10 @@ void render_spans_1cycle(int start, int end, int tilenum, int flip)
 		t = span[i].t;
 		w = span[i].w;
 
-		fb_index = fb_width * i;
 		x = xendsc;
+		curpixel = fb_width * i + x;
+		zbcur = zb + curpixel;
+		zhbcur = zhb + curpixel;
 
 		length = flip ? (xstart - xendsc) : (xendsc - xstart);
 		sigs.longspan = (length > 7);
@@ -4572,7 +4574,12 @@ void render_spans_1cycle(int start, int end, int tilenum, int flip)
 
 			
 			
-			if (sigs.startspan)
+			if (!sigs.startspan)
+			{
+				texel0_color = texel1_color;
+				lod_frac = prelodfrac;
+			}
+			else
 			{
 				if (other_modes.persp_tex_en)
 					tcdiv_persp(ss, st, sw, &sss, &sst);
@@ -4586,11 +4593,9 @@ void render_spans_1cycle(int start, int end, int tilenum, int flip)
 				
 				
 				texture_pipeline_cycle(&texel0_color, &texel0_color, sss, sst, tile1, 0);
-			}
-			else
-			{
-				texel0_color = texel1_color;
-				lod_frac = prelodfrac;
+
+				
+				sigs.startspan = 0;
 			}
 			
 			sigs.nextspan = sigs.endspan;
@@ -4605,18 +4610,12 @@ void render_spans_1cycle(int start, int end, int tilenum, int flip)
 			
 			texture_pipeline_cycle(&texel1_color, &texel1_color, news, newt, newtile, 0);
 
-			sigs.startspan = 0;
-
 			rgbaz_correct_tris(offx, offy, &sr, &sg, &sb, &sa, &sz);
 			rgbaz_clipper(sr, sg, sb, sa, &sz);
 
 			get_dither_noise(x, i, &cdith, &adith);
 			combiner_1cycle(adith);
 				
-			curpixel = fb_index + x;
-			zbcur = zb + curpixel;
-			zhbcur = zhb + curpixel;
-			
 			fbread_ptr(curpixel);
 			if (z_compare(zbcur, zhbcur, sz, dzpix, dzpixenc))
 			{
@@ -4639,6 +4638,9 @@ void render_spans_1cycle(int start, int end, int tilenum, int flip)
 			z += dzinc;
 			
 			x += xinc;
+			curpixel += xinc;
+			zbcur += xinc;
+			zhbcur += xinc;
 		}
 		}
 	}
@@ -4650,8 +4652,9 @@ void render_spans_2cycle(int start, int end, int tilenum, int flip)
 	void (*fbread_ptr)(UINT32) = fbread2_func[fb_size];
 	void (*fbwrite_ptr)(UINT32, UINT32, UINT32, UINT32) = fbwrite_func[fb_size];
 
-	UINT32 zb = zb_address >> 1;
-	UINT32 zhb = zb;
+	int zb = zb_address >> 1;
+	int zhb = zb;
+	int zbcur, zhbcur;
 	UINT8 offx = 0, offy = 0;
 	SPANSIGS sigs;
 	INT32 prelodfrac;
@@ -4712,9 +4715,8 @@ void render_spans_2cycle(int start, int end, int tilenum, int flip)
 	int sss = 0, sst = 0;
 	COLOR c2 = zero_color;
 	int curpixel = 0;
-	UINT32 zbcur;
-	UINT32 zhbcur;
-	int x, fb_index, length, scdiff;
+	
+	int x, length, scdiff;
 	UINT32 fir, fig, fib;
 				
 	for (i = start; i <= end; i++)
@@ -4731,8 +4733,10 @@ void render_spans_2cycle(int start, int end, int tilenum, int flip)
 		t = span[i].t;
 		w = span[i].w;
 
-		fb_index = fb_width * i;
 		x = xendsc;
+		curpixel = fb_width * i + x;
+		zbcur = zb + curpixel;
+		zhbcur = zhb + curpixel;
 
 		length = flip ? (xstart - xendsc) : (xendsc - xstart);
 		scdiff = flip ? (xendsc - xend) : (xend - xendsc);
@@ -4768,8 +4772,14 @@ void render_spans_2cycle(int start, int end, int tilenum, int flip)
 			lookup_cvmask_derivatives(span[i].mask[x], &offx, &offy);
 
 			get_nexttexel0_2cycle(&news, &newt, s, t, w, dsinc, dtinc, dwinc);
-
-			if (sigs.startspan)
+			
+			if (!sigs.startspan)
+			{
+				lod_frac = prelodfrac;
+				texel0_color = nexttexel_color;
+				texel1_color = nexttexel1_color;
+			}
+			else
 			{
 				if (other_modes.persp_tex_en)
 					tcdiv_persp(ss, st, sw, &sss, &sst);
@@ -4782,12 +4792,8 @@ void render_spans_2cycle(int start, int end, int tilenum, int flip)
 				
 				texture_pipeline_cycle(&texel0_color, &texel0_color, sss, sst, tile1, 0);
 				texture_pipeline_cycle(&texel1_color, &texel0_color, sss, sst, tile2, 1);
-			}
-			else
-			{
-				lod_frac = prelodfrac;
-				texel0_color = nexttexel_color;
-				texel1_color = nexttexel1_color;
+
+				sigs.startspan = 0;
 			}
 
 			s += dsinc;
@@ -4799,18 +4805,12 @@ void render_spans_2cycle(int start, int end, int tilenum, int flip)
 			texture_pipeline_cycle(&nexttexel_color, &nexttexel_color, news, newt, newtile1, 0);
 			texture_pipeline_cycle(&nexttexel1_color, &nexttexel_color, news, newt, newtile2, 1);
 
-			sigs.startspan = 0;
-
 			rgbaz_correct_tris(offx, offy, &sr, &sg, &sb, &sa, &sz);
 			rgbaz_clipper(sr, sg, sb, sa, &sz);
 					
 			get_dither_noise(x, i, &cdith, &adith);
 			combiner_2cycle(adith);
 				
-			curpixel = fb_index + x;
-			zbcur = zb + curpixel;
-			zhbcur = zhb + curpixel;
-			
 			fbread_ptr(curpixel);
 			if (z_compare(zbcur, zhbcur, sz, dzpix, dzpixenc))
 			{
@@ -4835,6 +4835,9 @@ void render_spans_2cycle(int start, int end, int tilenum, int flip)
 			z += dzinc;
 			
 			x += xinc;
+			curpixel += xinc;
+			zbcur += xinc;
+			zhbcur += xinc;
 		}
 		}
 	}
@@ -4859,15 +4862,16 @@ void render_spans_fill(int start, int end, int flip)
 	int xstart = 0, xendsc;
 	int prevxstart;
 	int curpixel = 0;
-	int x, fb_index, length;
+	int x, length;
 				
 	for (i = start; i <= end; i++)
 	{
 		prevxstart = xstart;
 		xstart = span[i].lx;
 		xendsc = span[i].rx;
-		fb_index = fb_width * i;
+
 		x = xendsc;
+		curpixel = fb_width * i + x;
 		length = flip ? (xstart - xendsc) : (xendsc - xstart);
 
 		if (span[i].validline)
@@ -4888,9 +4892,9 @@ void render_spans_fill(int start, int end, int flip)
 			
 			for (j = 0; j <= length; j++)
 			{
-				curpixel = fb_index + x;
 				fbfill_ptr(curpixel);
 				x += xinc;
+				curpixel += xinc;
 			}
 
 			if (slowkillbits && length >= 0)
@@ -4979,10 +4983,11 @@ void render_spans_copy(int start, int end, int tilenum, int flip)
 			st = t >> 16;
 			sw = w >> 16;
 
-			if (other_modes.persp_tex_en)
-				tcdiv_persp(ss, st, sw, &sss, &sst);
+			if (!other_modes.persp_tex_en)
+				tcdiv_nopersp(ss, st, sw, &sss, &sst);				
 			else
-				tcdiv_nopersp(ss, st, sw, &sss, &sst);
+				tcdiv_persp(ss, st, sw, &sss, &sst);
+				
 
 			tclod_copy(&sss, &sst, s, t, w, dsinc, dtinc, dwinc, prim_tile, &tile1);
 			
