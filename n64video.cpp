@@ -4202,21 +4202,20 @@ void fetch_qword_copy(UINT32* hidword, UINT32* lowdword, INT32 ssss, INT32 ssst,
 STRICTINLINE void texture_pipeline_cycle(COLOR* TEX, COLOR* prev, INT32 SSS, INT32 SST, UINT32 tilenum, UINT32 cycle)											
 {
 #define TRELATIVE(x, y) 	(((((x) >> 3) - (y)) << 3) | ((x) & 7));
-	INT32 maxs, maxt;
+	INT32 maxs, maxt, invt0r, invt0g, invt0b, invt0a;
+	INT32 sfrac, tfrac, invsf, invtf;
+	int upper = 0;
 	int bilerp = cycle ? other_modes.bi_lerp1 : other_modes.bi_lerp0;
 	int convert = other_modes.convert_one && cycle;
 	COLOR t0, t1, t2, t3;
-	int sss1, sst1, sss2, sst2;	
+	int sss1, sst1, sss2, sst2;
+	INT32 newk0, newk1, newk2, newk3, invk0, invk1, invk2, invk3;
+
+	sss1 = SSS;
+	sst1 = SST;
+
 	if (other_modes.sample_type)
 	{
-																			
-		INT32 sfrac, tfrac, invsf, invtf;
-		int upper = 0;
-		int center = 0;
-
-		sss1 = SSS;																						
-		sst1 = SST;																						
-		
 		tcshift_cycle(&sss1, &sst1, &maxs, &maxt, tilenum);
 
 		sss1 = TRELATIVE(sss1, tile[tilenum].sl);
@@ -4228,10 +4227,13 @@ STRICTINLINE void texture_pipeline_cycle(COLOR* TEX, COLOR* prev, INT32 SSS, INT
 		tcclamp_cycle(&sss1, &sst1, &sfrac, &tfrac, maxs, maxt, tilenum);
 		
 
-		if (tile[tilenum].format == FORMAT_YUV)
-			sss2 = sss1 + 2;
-		else
+		if (tile[tilenum].format != FORMAT_YUV)
 			sss2 = sss1 + 1;
+		else
+			sss2 = sss1 + 2;
+		
+		
+
 		sst2 = sst1 + 1;
 
 		
@@ -4241,19 +4243,12 @@ STRICTINLINE void texture_pipeline_cycle(COLOR* TEX, COLOR* prev, INT32 SSS, INT
 		
 		
 		
-		
-		if (upper)
-		{
-			invsf = 0x20 - sfrac;
-			invtf = 0x20 - tfrac;
-		}
 
-		center = (sfrac == 0x10) && (tfrac == 0x10) && other_modes.mid_texel;
 		
-		invsf <<= 3;
-		invtf <<= 3;
 		sfrac <<= 3;
 		tfrac <<= 3;
+		
+
 		
 		if (bilerp)
 		{
@@ -4263,52 +4258,49 @@ STRICTINLINE void texture_pipeline_cycle(COLOR* TEX, COLOR* prev, INT32 SSS, INT
 			else
 				fetch_texel_entlut_quadro(&t0, &t1, &t2, &t3, sss1, sss2, sst1, sst2, tilenum);
 
-			if (!center)
+			if (!other_modes.mid_texel || sfrac != 0x80 || tfrac != 0x80)
 			{
-				if (convert)
+				if (!convert)
 				{
-				if (upper)
-				{
-					TEX->r = prev->b + ((((prev->r * (t2.r - t3.r)) + (prev->g * (t1.r - t3.r))) + 0x80) >> 8);	
-					TEX->g = prev->b + ((((prev->r * (t2.g - t3.g)) + (prev->g * (t1.g - t3.g))) + 0x80) >> 8);																		
-					TEX->b = prev->b + ((((prev->r * (t2.b - t3.b)) + (prev->g * (t1.b - t3.b))) + 0x80) >> 8);																
-					TEX->a = prev->b + ((((prev->r * (t2.a - t3.a)) + (prev->g * (t1.a - t3.a))) + 0x80) >> 8);
+					if (upper)
+					{
+						
+						invsf = 0x100 - sfrac;
+						invtf = 0x100 - tfrac;
+						TEX->r = t3.r + ((((invsf * (t2.r - t3.r)) + (invtf * (t1.r - t3.r))) + 0x80) >> 8);	
+						TEX->g = t3.g + ((((invsf * (t2.g - t3.g)) + (invtf * (t1.g - t3.g))) + 0x80) >> 8);																		
+						TEX->b = t3.b + ((((invsf * (t2.b - t3.b)) + (invtf * (t1.b - t3.b))) + 0x80) >> 8);																
+						TEX->a = t3.a + ((((invsf * (t2.a - t3.a)) + (invtf * (t1.a - t3.a))) + 0x80) >> 8);
+					}
+					else
+					{
+						TEX->r = t0.r + ((((sfrac * (t1.r - t0.r)) + (tfrac * (t2.r - t0.r))) + 0x80) >> 8);											
+						TEX->g = t0.g + ((((sfrac * (t1.g - t0.g)) + (tfrac * (t2.g - t0.g))) + 0x80) >> 8);											
+						TEX->b = t0.b + ((((sfrac * (t1.b - t0.b)) + (tfrac * (t2.b - t0.b))) + 0x80) >> 8);									
+						TEX->a = t0.a + ((((sfrac * (t1.a - t0.a)) + (tfrac * (t2.a - t0.a))) + 0x80) >> 8);
+					}
 				}
 				else
 				{
-					TEX->r = prev->b + ((((prev->r * (t1.r - t0.r)) + (prev->g * (t2.r - t0.r))) + 0x80) >> 8);											
-					TEX->g = prev->b + ((((prev->r * (t1.g - t0.g)) + (prev->g * (t2.g - t0.g))) + 0x80) >> 8);											
-					TEX->b = prev->b + ((((prev->r * (t1.b - t0.b)) + (prev->g * (t2.b - t0.b))) + 0x80) >> 8);									
-					TEX->a = prev->b + ((((prev->r * (t1.a - t0.a)) + (prev->g * (t2.a - t0.a))) + 0x80) >> 8);
+					if (upper)
+					{
+						TEX->r = prev->b + ((((prev->r * (t2.r - t3.r)) + (prev->g * (t1.r - t3.r))) + 0x80) >> 8);	
+						TEX->g = prev->b + ((((prev->r * (t2.g - t3.g)) + (prev->g * (t1.g - t3.g))) + 0x80) >> 8);																		
+						TEX->b = prev->b + ((((prev->r * (t2.b - t3.b)) + (prev->g * (t1.b - t3.b))) + 0x80) >> 8);																
+						TEX->a = prev->b + ((((prev->r * (t2.a - t3.a)) + (prev->g * (t1.a - t3.a))) + 0x80) >> 8);
+					}
+					else
+					{
+						TEX->r = prev->b + ((((prev->r * (t1.r - t0.r)) + (prev->g * (t2.r - t0.r))) + 0x80) >> 8);											
+						TEX->g = prev->b + ((((prev->r * (t1.g - t0.g)) + (prev->g * (t2.g - t0.g))) + 0x80) >> 8);											
+						TEX->b = prev->b + ((((prev->r * (t1.b - t0.b)) + (prev->g * (t2.b - t0.b))) + 0x80) >> 8);									
+						TEX->a = prev->b + ((((prev->r * (t1.a - t0.a)) + (prev->g * (t2.a - t0.a))) + 0x80) >> 8);
+					}	
 				}
-				}
-				else
-				{
-				if (upper)
-				{
-					TEX->r = t3.r + ((((invsf * (t2.r - t3.r)) + (invtf * (t1.r - t3.r))) + 0x80) >> 8);	
-					TEX->g = t3.g + ((((invsf * (t2.g - t3.g)) + (invtf * (t1.g - t3.g))) + 0x80) >> 8);																		
-					TEX->b = t3.b + ((((invsf * (t2.b - t3.b)) + (invtf * (t1.b - t3.b))) + 0x80) >> 8);																
-					TEX->a = t3.a + ((((invsf * (t2.a - t3.a)) + (invtf * (t1.a - t3.a))) + 0x80) >> 8);
-				}
-				else
-				{
-					TEX->r = t0.r + ((((sfrac * (t1.r - t0.r)) + (tfrac * (t2.r - t0.r))) + 0x80) >> 8);											
-					TEX->g = t0.g + ((((sfrac * (t1.g - t0.g)) + (tfrac * (t2.g - t0.g))) + 0x80) >> 8);											
-					TEX->b = t0.b + ((((sfrac * (t1.b - t0.b)) + (tfrac * (t2.b - t0.b))) + 0x80) >> 8);									
-					TEX->a = t0.a + ((((sfrac * (t1.a - t0.a)) + (tfrac * (t2.a - t0.a))) + 0x80) >> 8);
-				}
-				}
-				TEX->r &= 0x1ff;
-				TEX->g &= 0x1ff;
-				TEX->b &= 0x1ff;
-				TEX->a &= 0x1ff;
-				
-				
 			}
 			else
 			{
-				INT32 invt0r  = ~t0.r, invt0g = ~t0.g, invt0b = ~t0.b, invt0a = ~t0.a;
+				invt0r  = ~t0.r; invt0g = ~t0.g; invt0b = ~t0.b; invt0a = ~t0.a;
 				if (convert)
 				{
 					TEX->r = prev->b + (((((prev->r * (t1.r - t0.r)) + (prev->g * (t2.r - t0.r))) & ~0x3f) + ((invt0r + t3.r) << 6) + 0xc0) >> 8);											
@@ -4325,16 +4317,12 @@ STRICTINLINE void texture_pipeline_cycle(COLOR* TEX, COLOR* prev, INT32 SSS, INT
 					TEX->b = t0.b + (((((sfrac * (t1.b - t0.b)) + (tfrac * (t2.b - t0.b))) & ~0x3f) + ((invt0b + t3.b) << 6) + 0xc0) >> 8);									
 					TEX->a = t0.a + (((((sfrac * (t1.a - t0.a)) + (tfrac * (t2.a - t0.a))) & ~0x3f) + ((invt0a + t3.a) << 6) + 0xc0) >> 8);
 				}
-				TEX->r &= 0x1ff;
-				TEX->g &= 0x1ff;
-				TEX->b &= 0x1ff;
-				TEX->a &= 0x1ff;
 			}
 		}
 		else
 		{
-			INT32 newk0 = SIGN9(k0), newk1 = SIGN9(k1), newk2 = SIGN9(k2), newk3 = SIGN9(k3);
-			INT32 invk0 = ~newk0, invk1 =~newk1, invk2 = ~newk2, invk3 = ~newk3;
+			newk0 = SIGN9(k0); newk1 = SIGN9(k1); newk2 = SIGN9(k2); newk3 = SIGN9(k3);
+			invk0 = ~newk0; invk1 =~newk1; invk2 = ~newk2; invk3 = ~newk3;
 			if (!other_modes.en_tlut)
 				fetch_texel(&t0, sss1, sst1, tilenum);
 			else
@@ -4348,16 +4336,17 @@ STRICTINLINE void texture_pipeline_cycle(COLOR* TEX, COLOR* prev, INT32 SSS, INT
 			TEX->g = t0.b + ((((newk1 - invk1) * t0.r + (newk2 - invk2) * t0.g) + 0x80) >> 8);
 			TEX->b = t0.b + ((((newk3 - invk3) * t0.r) + 0x80) >> 8);
 			TEX->a = t0.b;
-			TEX->r &= 0x1ff;
-			TEX->g &= 0x1ff;
-			TEX->b &= 0x1ff;
-			TEX->a &= 0x1ff;
 		}
+
+		TEX->r &= 0x1ff;
+		TEX->g &= 0x1ff;
+		TEX->b &= 0x1ff;
+		TEX->a &= 0x1ff;
+		
+		
 	}
 	else																										
 	{																										
-		int sss1 = SSS, sst1 = SST;
-
 		tcshift_cycle(&sss1, &sst1, &maxs, &maxt, tilenum);
 
 		sss1 = TRELATIVE(sss1, tile[tilenum].sl);
@@ -4379,15 +4368,15 @@ STRICTINLINE void texture_pipeline_cycle(COLOR* TEX, COLOR* prev, INT32 SSS, INT
 
 		if (bilerp)
 		{
-			if (convert)
-				TEX->r = TEX->g = TEX->b = TEX->a = prev->b;
-			else
+			if (!convert)
 				*TEX = t0;
+			else
+				TEX->r = TEX->g = TEX->b = TEX->a = prev->b;
 		}
 		else
 		{
-			INT32 newk0 = SIGN9(k0), newk1 = SIGN9(k1), newk2 = SIGN9(k2), newk3 = SIGN9(k3);
-			INT32 invk0 = ~newk0, invk1 =~newk1, invk2 = ~newk2, invk3 = ~newk3;
+			newk0 = SIGN9(k0); newk1 = SIGN9(k1); newk2 = SIGN9(k2); newk3 = SIGN9(k3);
+			invk0 = ~newk0; invk1 =~newk1; invk2 = ~newk2; invk3 = ~newk3;
 			if (convert)
 				t0 = *prev;
 			t0.r = SIGN9(t0.r);
