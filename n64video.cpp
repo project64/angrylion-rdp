@@ -613,7 +613,7 @@ STRICTINLINE void tcmask(INT32* S, INT32* T, INT32 num)
 	{
 		if (tile[num].ms)
 		{
-			wrap = *S >> (tile[num].mask_s > 10 ? 10 : tile[num].mask_s);
+			wrap = *S >> (tile[num].mask_s <= 10 ? tile[num].mask_s : 10);
 			wrap &= 1;
 			if (wrap)
 				*S = (~(*S));
@@ -625,7 +625,7 @@ STRICTINLINE void tcmask(INT32* S, INT32* T, INT32 num)
 	{
 		if (tile[num].mt)
 		{
-			wrap = *T >> (tile[num].mask_t > 10 ? 10 : tile[num].mask_t);
+			wrap = *T >> (tile[num].mask_t <= 10 ? tile[num].mask_t : 10);
 			wrap &= 1;
 			if (wrap)
 				*T = (~(*T));
@@ -648,7 +648,7 @@ STRICTINLINE void tcmask_coupled(INT32* S, INT32* S1, INT32* T, INT32* T1, INT32
 	{
 		if (tile[num].ms)
 		{
-			wrapthreshold = tile[num].mask_s > 10 ? 10 : tile[num].mask_s;
+			wrapthreshold = tile[num].mask_s <= 10 ? tile[num].mask_s : 10;
 
 			wrap = (*S >> wrapthreshold) & 1;
 			if (wrap)
@@ -668,7 +668,7 @@ STRICTINLINE void tcmask_coupled(INT32* S, INT32* S1, INT32* T, INT32* T1, INT32
 	{
 		if (tile[num].mt)
 		{
-			wrapthreshold = tile[num].mask_t > 10 ? 10 : tile[num].mask_t;
+			wrapthreshold = tile[num].mask_t <= 10 ? tile[num].mask_t : 10;
 
 			wrap = (*T >> wrapthreshold) & 1;
 			if (wrap)
@@ -696,7 +696,7 @@ STRICTINLINE void tcmask_copy(INT32* S, INT32* S1, INT32* S2, INT32* S3, INT32* 
 	{
 		if (tile[num].ms)
 		{
-			swrapthreshold = tile[num].mask_s > 10 ? 10 : tile[num].mask_s;
+			swrapthreshold = tile[num].mask_s <= 10 ? tile[num].mask_s : 10;
 
 			wrap = (*S >> swrapthreshold) & 1;
 			if (wrap)
@@ -726,7 +726,7 @@ STRICTINLINE void tcmask_copy(INT32* S, INT32* S1, INT32* S2, INT32* S3, INT32* 
 	{
 		if (tile[num].mt)
 		{
-			wrap = *T >> (tile[num].mask_t > 10 ? 10 : tile[num].mask_t); 
+			wrap = *T >> (tile[num].mask_t <= 10 ? tile[num].mask_t : 10); 
 			wrap &= 1;
 			if (wrap)
 				*T = (~(*T));
@@ -835,36 +835,42 @@ STRICTINLINE void tcclamp_cycle(INT32* S, INT32* T, INT32* SFRAC, INT32* TFRAC, 
 {
 	if (tile[num].f.clampens)
 	{
-		if (*S & 0x10000)
+		if (!(*S & 0x10000))
+		{
+			if (!maxs)
+				*S = (SIGN17(*S) >> 5) & 0x1fff;
+			else
+			{
+				*S = tile[num].f.clampdiffs;
+				*SFRAC = 0;
+			}
+		}
+		else
 		{
 			*S = 0;
 			*SFRAC = 0;
 		}
-		else if (maxs)
-		{
-			*S = tile[num].f.clampdiffs;
-			*SFRAC = 0;
-		}
-		else
-			*S = (SIGN17(*S) >> 5) & 0x1fff;
 	}
 	else
 		*S = (SIGN17(*S) >> 5) & 0x1fff;
 
 	if (tile[num].f.clampent)
 	{
-		if (*T & 0x10000)
+		if (!(*T & 0x10000))
+		{
+			if (!maxt)
+				*T = (SIGN17(*T) >> 5) & 0x1fff;
+			else
+			{
+				*T = tile[num].f.clampdifft;
+				*TFRAC = 0;
+			}
+		}
+		else
 		{
 			*T = 0;
 			*TFRAC = 0;
 		}
-		else if (maxt)
-		{
-			*T = tile[num].f.clampdifft;
-			*TFRAC = 0;
-		}
-		else
-			*T = (SIGN17(*T) >> 5) & 0x1fff;
 	}
 	else
 		*T = (SIGN17(*T) >> 5) & 0x1fff;
@@ -875,32 +881,30 @@ STRICTINLINE void tcclamp_cycle_light(INT32* S, INT32* T, INT32 maxs, INT32 maxt
 {
 	if (tile[num].f.clampens)
 	{
-		if (*S & 0x10000)
+		if (!(*S & 0x10000))
 		{
-			*S = 0;
-		}
-		else if (maxs)
-		{
-			*S = tile[num].f.clampdiffs;
+			if (!maxs)
+				*S = (SIGN17(*S) >> 5) & 0x1fff;
+			else
+				*S = tile[num].f.clampdiffs;
 		}
 		else
-			*S = (SIGN17(*S) >> 5) & 0x1fff;
+			*S = 0;
 	}
 	else
 		*S = (SIGN17(*S) >> 5) & 0x1fff;
 
 	if (tile[num].f.clampent)
 	{
-		if (*T & 0x10000)
+		if (!(*T & 0x10000))
 		{
-			*T = 0;
-		}
-		else if (maxt)
-		{
-			*T = tile[num].f.clampdifft;
+			if (!maxt)
+				*T = (SIGN17(*T) >> 5) & 0x1fff;
+			else
+				*T = tile[num].f.clampdifft;
 		}
 		else
-			*T = (SIGN17(*T) >> 5) & 0x1fff;
+			*T = 0;
 	}
 	else
 		*T = (SIGN17(*T) >> 5) & 0x1fff;
@@ -1510,7 +1514,11 @@ STRICTINLINE void vi_fetch_filter16(CCVG* res, UINT32 fboffset, UINT32 cur_x, UI
 	int midline = 0, viaa_bounds = 0, dither_bounds = 0;
 	UINT32 idx = (fboffset >> 1) + cur_x;
 	UINT32 pix = RREADIDX16(idx);
-	UINT32 cur_cvg = ((pix & 1) << 2) | (HREADADDR8(idx) & 3);
+	UINT32 cur_cvg;
+	if (fsaa)
+		cur_cvg = ((pix & 1) << 2) | (HREADADDR8(idx) & 3);
+	else
+		cur_cvg = 7;
 	r = GET_HI(pix);
 	g = GET_MED(pix);
 	b = GET_LOW(pix);
@@ -1519,17 +1527,16 @@ STRICTINLINE void vi_fetch_filter16(CCVG* res, UINT32 fboffset, UINT32 cur_x, UI
 	midline = (j > 0 && j < (vres - 1));
 	viaa_bounds = (linex > 1 && linex < (fbw - 2) && midline);
 	dither_bounds = (linex > 0 && linex < (fbw - 1) && midline);
-	
-	if (!fsaa)
-		cur_cvg = 7;
-	if (cur_cvg < 7 && viaa_bounds)
-	{
-		video_filter16(&r, &g, &b, fboffset, cur_x, fbw, cur_cvg);
-	}
-	else if (cur_cvg == 7 && dither_bounds && dither_filter)
+
+	if (cur_cvg == 7 && dither_bounds && dither_filter)
 	{
 		restore_filter16(&r, &g, &b, fboffset, cur_x, fbw);
 	}
+	else if (cur_cvg < 7 && viaa_bounds)
+	{
+		video_filter16(&r, &g, &b, fboffset, cur_x, fbw, cur_cvg);
+	}
+
 
 	res->r = r;
 	res->g = g;
@@ -1542,7 +1549,11 @@ STRICTINLINE void vi_fetch_filter32(CCVG* res, UINT32 fboffset, UINT32 cur_x, UI
 	int r, g, b;
 	int midline = 0, viaa_bounds = 0, dither_bounds = 0;
 	UINT32 pix = RREADIDX32((fboffset >> 2) + cur_x);
-	UINT32 cur_cvg = (pix >> 5) & 7;
+	UINT32 cur_cvg;
+	if (fsaa)
+		cur_cvg = (pix >> 5) & 7;
+	else
+		cur_cvg = 7;
 	r = (pix >> 24) & 0xff;
 	g = (pix >> 16) & 0xff;
 	b = (pix >> 8) & 0xff;
@@ -1552,15 +1563,13 @@ STRICTINLINE void vi_fetch_filter32(CCVG* res, UINT32 fboffset, UINT32 cur_x, UI
 	viaa_bounds = (linex > 1 && linex < (fbw - 2) && midline);
 	dither_bounds = (linex > 0 && linex < (fbw - 1) && midline);
 	
-	if (!fsaa)
-		cur_cvg = 7;
-	if (cur_cvg < 7 && viaa_bounds)
-	{
-		video_filter32(&r, &g, &b, fboffset, cur_x, fbw, cur_cvg);
-	}
-	else if (cur_cvg == 7 && dither_bounds && dither_filter)
+	if (cur_cvg == 7 && dither_bounds && dither_filter)
 	{
 		restore_filter32(&r, &g, &b, fboffset, cur_x, fbw);
+	}
+	else if (cur_cvg < 7 && viaa_bounds)
+	{
+		video_filter32(&r, &g, &b, fboffset, cur_x, fbw, cur_cvg);
 	}
 
 	res->r = r;
@@ -1699,7 +1708,17 @@ STRICTINLINE void combiner_1cycle(int adseed)
 	if (pixel_color.a == 0xff)
 		pixel_color.a = 0x100;
 	
-	if (other_modes.key_en)
+	if (!other_modes.key_en)
+	{
+		
+		combined_color.r >>= 8;
+		combined_color.g >>= 8;
+		combined_color.b >>= 8;
+		pixel_color.r = special_9bit_clamptable[combined_color.r];
+		pixel_color.g = special_9bit_clamptable[combined_color.g];
+		pixel_color.b = special_9bit_clamptable[combined_color.b];
+	}
+	else
 	{
 		redkey = SIGN17(combined_color.r);
 		if (redkey >= 0)
@@ -1730,16 +1749,6 @@ STRICTINLINE void combiner_1cycle(int adseed)
 		combined_color.g >>= 8;
 		combined_color.b >>= 8;
 	}
-	else
-	{
-		
-		combined_color.r >>= 8;
-		combined_color.g >>= 8;
-		combined_color.b >>= 8;
-		pixel_color.r = special_9bit_clamptable[combined_color.r];
-		pixel_color.g = special_9bit_clamptable[combined_color.g];
-		pixel_color.b = special_9bit_clamptable[combined_color.b];
-	}
 
 	
 	if (other_modes.cvg_times_alpha)
@@ -1747,21 +1756,25 @@ STRICTINLINE void combiner_1cycle(int adseed)
 		temp = (pixel_color.a * curpixel_cvg + 4) >> 3;
 		curpixel_cvg = (temp >> 5) & 0xf;
 	}
-	if (other_modes.alpha_cvg_select)
+
+	if (!other_modes.alpha_cvg_select)
+	{
+		if (!other_modes.key_en)
+		{
+			pixel_color.a += adseed;
+			if (pixel_color.a & 0x100)
+				pixel_color.a = 0xff;
+		}
+		else
+			pixel_color.a = keyalpha;
+	}
+	else
 	{
 		if (other_modes.cvg_times_alpha)
 			pixel_color.a = temp;
 		else
 			pixel_color.a = curpixel_cvg << 5;
 		if (pixel_color.a > 0xff)
-			pixel_color.a = 0xff;
-	}
-	else if (other_modes.key_en)
-		pixel_color.a = keyalpha;
-	else
-	{
-		pixel_color.a += adseed;
-		if (pixel_color.a & 0x100)
 			pixel_color.a = 0xff;
 	}
 
@@ -1805,7 +1818,18 @@ STRICTINLINE void combiner_2cycle(int adseed)
 	combined_color.a = alpha_combiner_equation(*combiner_alphasub_a[1],*combiner_alphasub_b[1],*combiner_alphamul[1],*combiner_alphaadd[1]);
 
 		
-	if (other_modes.key_en)
+	if (!other_modes.key_en)
+	{
+		
+		combined_color.r >>= 8;
+		combined_color.g >>= 8;
+		combined_color.b >>= 8;
+
+		pixel_color.r = special_9bit_clamptable[combined_color.r];
+		pixel_color.g = special_9bit_clamptable[combined_color.g];
+		pixel_color.b = special_9bit_clamptable[combined_color.b];
+	}
+	else
 	{
 		redkey = SIGN17(combined_color.r);
 		if (redkey >= 0)
@@ -1836,17 +1860,6 @@ STRICTINLINE void combiner_2cycle(int adseed)
 		combined_color.g >>= 8;
 		combined_color.b >>= 8;
 	}
-	else
-	{
-		
-		combined_color.r >>= 8;
-		combined_color.g >>= 8;
-		combined_color.b >>= 8;
-
-		pixel_color.r = special_9bit_clamptable[combined_color.r];
-		pixel_color.g = special_9bit_clamptable[combined_color.g];
-		pixel_color.b = special_9bit_clamptable[combined_color.b];
-	}
 
 	pixel_color.a = special_9bit_clamptable[combined_color.a];
 	if (pixel_color.a == 0xff)
@@ -1858,21 +1871,25 @@ STRICTINLINE void combiner_2cycle(int adseed)
 		temp = (pixel_color.a * curpixel_cvg + 4) >> 3;
 		curpixel_cvg = (temp >> 5) & 0xf;
 	}
-	if (other_modes.alpha_cvg_select)
+	
+	if (!other_modes.alpha_cvg_select)
+	{
+		if (!other_modes.key_en)
+		{
+			pixel_color.a += adseed;
+			if (pixel_color.a & 0x100)
+				pixel_color.a = 0xff;
+		}
+		else
+			pixel_color.a = keyalpha;
+	}
+	else
 	{
 		if (other_modes.cvg_times_alpha)
 			pixel_color.a = temp;
 		else
 			pixel_color.a = curpixel_cvg << 5;
 		if (pixel_color.a > 0xff)
-			pixel_color.a = 0xff;
-	}
-	else if (other_modes.key_en)
-		pixel_color.a = keyalpha;
-	else
-	{
-		pixel_color.a += adseed;
-		if (pixel_color.a & 0x100)
 			pixel_color.a = 0xff;
 	}
 
@@ -2106,24 +2123,18 @@ INLINE int blender_1cycle(UINT32* fr, UINT32* fg, UINT32* fb, int dith, int part
 	int r, g, b, dontblend;
 	
 	
-	if (!alpha_compare(pixel_color.a))
-		return 0;
-
-	
-
-	
-	
-	
-	if (other_modes.antialias_en ? (!curpixel_cvg) : (!curpixel_cvbit))
-		return 0;
-
-	if (other_modes.color_on_cvg && !prewrap)
+	if (alpha_compare(pixel_color.a))
 	{
-		r = *blender2a_r[0];
-		g = *blender2a_g[0];
-		b = *blender2a_b[0];
-	}
-	else
+
+	
+
+	
+	
+	
+	if (other_modes.antialias_en ? (curpixel_cvg) : (curpixel_cvbit))
+	{
+
+	if (!other_modes.color_on_cvg || prewrap)
 	{
 		dontblend = (partialreject && pixel_color.a >= 0xff);
 		if (!blend_en || dontblend)
@@ -2143,6 +2154,13 @@ INLINE int blender_1cycle(UINT32* fr, UINT32* fg, UINT32* fb, int dith, int part
 			blender_equation_cycle0(&r, &g, &b, special_bsel);
 		}
 	}
+	else
+	{
+		r = *blender2a_r[0];
+		g = *blender2a_g[0];
+		b = *blender2a_b[0];
+	}
+
 
 	if (other_modes.rgb_dither_sel < 3)
 		rgb_dither(&r, &g, &b, dith);
@@ -2150,6 +2168,10 @@ INLINE int blender_1cycle(UINT32* fr, UINT32* fg, UINT32* fb, int dith, int part
 	*fg = g;
 	*fb = b;
 	return 1;
+	}
+	else return 0;
+	}
+	else return 0;
 }
 
 INLINE int blender_2cycle(UINT32* fr, UINT32* fg, UINT32* fb, int dith, int partialreject, int special_bsel0, int special_bsel1)
@@ -2158,11 +2180,11 @@ INLINE int blender_2cycle(UINT32* fr, UINT32* fg, UINT32* fb, int dith, int part
 	int r, g, b, dontblend;
 
 	
-	if (!alpha_compare(pixel_color.a))
-		return 0;
+	if (alpha_compare(pixel_color.a))
+	{
 	
-	if (other_modes.antialias_en ? (!curpixel_cvg) : (!curpixel_cvbit))
-		return 0;
+	if (other_modes.antialias_en ? (curpixel_cvg) : (curpixel_cvbit))
+	{
 
 	
 	inv_pixel_color.a =  (~(*blender1b_a[0])) & 0xff;
@@ -2177,13 +2199,7 @@ INLINE int blender_2cycle(UINT32* fr, UINT32* fg, UINT32* fb, int dith, int part
 	blended_pixel_color.b = b;
 	blended_pixel_color.a = pixel_color.a;
 
-	if (other_modes.color_on_cvg && !prewrap)
-	{
-		r = *blender2a_r[1];
-		g = *blender2a_g[1];
-		b = *blender2a_b[1];
-	}
-	else
+	if (!other_modes.color_on_cvg || prewrap)
 	{
 		dontblend = (partialreject && pixel_color.a >= 0xff);
 		if (!blend_en || dontblend)
@@ -2196,7 +2212,13 @@ INLINE int blender_2cycle(UINT32* fr, UINT32* fg, UINT32* fb, int dith, int part
 		{
 			inv_pixel_color.a =  (~(*blender1b_a[1])) & 0xff;
 			blender_equation_cycle1(&r, &g, &b, special_bsel1);
-		}	
+		}
+	}
+	else
+	{
+		r = *blender2a_r[1];
+		g = *blender2a_g[1];
+		b = *blender2a_b[1];
 	}
 
 	
@@ -2207,6 +2229,10 @@ INLINE int blender_2cycle(UINT32* fr, UINT32* fg, UINT32* fb, int dith, int part
 	*fg = g;
 	*fb = b;
 	return 1;
+	}
+	else return 0;
+	}
+	else return 0;
 }
 
 
@@ -7061,13 +7087,19 @@ void rdp_process_list(void)
 INLINE int alpha_compare(INT32 comb_alpha)
 {
 	INT32 threshold;
-	if (other_modes.alpha_compare_en)
+	if (!other_modes.alpha_compare_en)
+		return 1;
+	else
 	{
-		threshold = (other_modes.dither_alpha_en) ? (rand() & 0xff) : blend_color.a;
-		if (comb_alpha < threshold)
+		if (!other_modes.dither_alpha_en)
+			threshold = blend_color.a;
+		else
+			threshold = rand() & 0xff;
+		if (comb_alpha >= threshold)
+			return 1;
+		else
 			return 0;
 	}
-	return 1;
 }
 
 STRICTINLINE INT32 color_combiner_equation(INT32 a, INT32 b, INT32 c, INT32 d)
@@ -7115,14 +7147,7 @@ STRICTINLINE void blender_equation_cycle0(int* r, int* g, int* b, int bsel_speci
 	
 	
 
-
-	if (other_modes.force_blend)
-	{
-		*r >>= 3;	
-		*g >>= 3; 
-		*b >>= 3;
-	}
-	else
+	if (!other_modes.force_blend)
 	{
 		sum = (blend1a >> 2) + (blend2a >> 2) + 1;
 		
@@ -7134,7 +7159,12 @@ STRICTINLINE void blender_equation_cycle0(int* r, int* g, int* b, int bsel_speci
 			*b /= sum;
 		
 	}
-	
+	else
+	{
+		*r >>= 3;	
+		*g >>= 3; 
+		*b >>= 3;
+	}	
 }
 
 STRICTINLINE void blender_equation_cycle0_2(int* r, int* g, int* b, int bsel_special)
@@ -7175,13 +7205,7 @@ STRICTINLINE void blender_equation_cycle1(int* r, int* g, int* b, int bsel_speci
 	*g = (((*blender1a_g[1]) * blend1a + (*blender2a_g[1]) * mulb) >> 2) & 0x7ff;
 	*b = (((*blender1a_b[1]) * blend1a + (*blender2a_b[1]) * mulb) >> 2) & 0x7ff;
 
-	if (other_modes.force_blend)
-	{
-		*r >>= 3;	
-		*g >>= 3; 
-		*b >>= 3;
-	}
-	else
+	if (!other_modes.force_blend)
 	{
 		sum = (blend1a >> 2) + (blend2a >> 2) + 1;
 
@@ -7189,7 +7213,12 @@ STRICTINLINE void blender_equation_cycle1(int* r, int* g, int* b, int bsel_speci
 		*g /= sum; 
 		*b /= sum;
 	}
-
+	else
+	{
+		*r >>= 3;	
+		*g >>= 3; 
+		*b >>= 3;
+	}
 }
 
 
@@ -7846,19 +7875,19 @@ INLINE UINT32 z_compare(UINT32 zcurpixel, UINT32 dzcurpixel, UINT32 sz, UINT16 d
 			break;
 		case ZMODE_INTERPENETRATING: 
 			infront = sz < oz;
-			if (infront && farther && overflow)
-			{
-				dzenc = dz_compress(dznotshift & 0xffff);
-				cvgcoeff = ((oz >> dzenc) - (sz >> dzenc)) & 0xf;
-				curpixel_cvg = ((cvgcoeff * curpixel_cvg) >> 3) & 0xf;
-				return 1;
-			}
-			else
+			if (!infront || !farther || !overflow)
 			{
 				diff = (INT32)sz - (INT32)dznew;
 				nearer = force_coplanar || (diff <= (INT32)oz);
 				max = (oz == 0x3ffff);
 				return (max || (overflow ? infront : nearer)); 
+			}
+			else
+			{
+				dzenc = dz_compress(dznotshift & 0xffff);
+				cvgcoeff = ((oz >> dzenc) - (sz >> dzenc)) & 0xf;
+				curpixel_cvg = ((cvgcoeff * curpixel_cvg) >> 3) & 0xf;
+				return 1;
 			}
 			break;
 		case ZMODE_TRANSPARENT: 
@@ -8553,10 +8582,10 @@ STRICTINLINE void rgbaz_clipper(int sr, int sg, int sb, int sa, int *sz)
 	zanded >>= 17;
 	switch(zanded)
 	{
-	case 0: *sz &= 0x3ffff;											break;
-	case 1:	*sz &= 0x3ffff;											break;
-	case 2: *sz = 0x3ffff;											break;
-	case 3: *sz = 0;												break;
+		case 0: *sz &= 0x3ffff;											break;
+		case 1:	*sz &= 0x3ffff;											break;
+		case 2: *sz = 0x3ffff;											break;
+		case 3: *sz = 0;												break;
 	}
 }
 
@@ -8715,32 +8744,32 @@ STRICTINLINE void tcdiv_persp(INT32 ss, INT32 st, INT32 sw, INT32* sss, INT32* s
 	outofbounds_s = sprod & tempmask;
 	outofbounds_t = tprod & tempmask;
 	
-	if (shift == 0xe)
-	{
-		*sss = sprod << 1;
-		*sst = tprod << 1;
-	}
-	else
+	if (shift != 0xe)
 	{
 		shift_value = 13 - shift;
 		*sss = sprod = (sprod >> shift_value);
 		*sst = tprod = (tprod >> shift_value);
 	}
+	else
+	{
+		*sss = sprod << 1;
+		*sst = tprod << 1;
+	}
 	
 	if (outofbounds_s != tempmask && outofbounds_s != 0)
 	{
-		if (sprod & (1 << 29))
-			overunder_s = 1;
-		else
+		if (!(sprod & (1 << 29)))
 			overunder_s = 2;
+		else
+			overunder_s = 1;
 	}
 
 	if (outofbounds_t != tempmask && outofbounds_t != 0)
 	{
-		if (tprod & (1 << 29))
-			overunder_t = 1;
-		else
+		if (!(tprod & (1 << 29)))
 			overunder_t = 2;
+		else
+			overunder_t = 1;
 	}
 
 	if (w_carry)
@@ -8770,38 +8799,51 @@ STRICTINLINE void tclod_2cycle_current(INT32* sss, INT32* sst, INT32 nexts, INT3
 	UINT32 magnify = 0;
 	UINT32 distant = 0;
 	int tempanded;
-	int inits = *sss, initt = *sst;
+	int inits = *sss, initt = *sst, temps = *sss, tempt = *sst;
 
 	
-	if (*sss & 0x40000)
-		*sss = 0x7fff;
-	else if (*sss & 0x20000)
-		*sss = 0x8000;
-	else
+	
+	if (!(temps & 0x40000))
 	{
-		tempanded = *sss & 0x18000;
-		if (tempanded == 0x8000)
-			*sss = 0x7fff;
-		else if (tempanded == 0x10000)
+		if (!(temps & 0x20000))
+		{
+			tempanded = temps & 0x18000;
+			if (tempanded != 0x8000)
+			{
+				if (tempanded != 0x10000)
+					*sss &= 0xffff;
+				else
+					*sss = 0x8000;
+			}
+			else
+				*sss = 0x7fff;
+		}
+		else
 			*sss = 0x8000;
-		else
-			*sss &= 0xffff;
 	}
-
-	if (*sst & 0x40000)
-		*sst = 0x7fff;
-	else if (*sst & 0x20000)
-		*sst = 0x8000;
 	else
+		*sss = 0x7fff;
+
+	if (!(tempt & 0x40000))
 	{
-		tempanded = *sst & 0x18000;
-		if (tempanded == 0x8000)
-			*sst = 0x7fff;
-		else if (tempanded == 0x10000)
-			*sst = 0x8000;
+		if (!(tempt & 0x20000))
+		{
+			tempanded = tempt & 0x18000;
+			if (tempanded != 0x8000)
+			{
+				if (tempanded != 0x10000)
+					*sst &= 0xffff;
+				else
+					*sst = 0x8000;
+			}
+			else
+				*sst = 0x7fff;
+		}
 		else
-			*sst &= 0xffff;
+			*sst = 0x8000;
 	}
+	else
+		*sst = 0x7fff;
 
 	if (dolod)
 	{
@@ -8892,38 +8934,50 @@ STRICTINLINE void tclod_2cycle_next(INT32* sss, INT32* sst, INT32 s, INT32 t, IN
 	UINT32 magnify = 0;
 	UINT32 distant = 0;
 	int tempanded;
-	int inits = *sss, initt = *sst;
+	int inits = *sss, initt = *sst, temps = *sss, tempt = *sst;
 
 	
-	if (*sss & 0x40000)
-		*sss = 0x7fff;
-	else if (*sss & 0x20000)
-		*sss = 0x8000;
-	else
+	if (!(temps & 0x40000))
 	{
-		tempanded = *sss & 0x18000;
-		if (tempanded == 0x8000)
-			*sss = 0x7fff;
-		else if (tempanded == 0x10000)
+		if (!(temps & 0x20000))
+		{
+			tempanded = temps & 0x18000;
+			if (tempanded != 0x8000)
+			{
+				if (tempanded != 0x10000)
+					*sss &= 0xffff;
+				else
+					*sss = 0x8000;
+			}
+			else
+				*sss = 0x7fff;
+		}
+		else
 			*sss = 0x8000;
-		else
-			*sss &= 0xffff;
 	}
-
-	if (*sst & 0x40000)
-		*sst = 0x7fff;
-	else if (*sst & 0x20000)
-		*sst = 0x8000;
 	else
+		*sss = 0x7fff;
+
+	if (!(tempt & 0x40000))
 	{
-		tempanded = *sst & 0x18000;
-		if (tempanded == 0x8000)
-			*sst = 0x7fff;
-		else if (tempanded == 0x10000)
-			*sst = 0x8000;
+		if (!(tempt & 0x20000))
+		{
+			tempanded = tempt & 0x18000;
+			if (tempanded != 0x8000)
+			{
+				if (tempanded != 0x10000)
+					*sst &= 0xffff;
+				else
+					*sst = 0x8000;
+			}
+			else
+				*sst = 0x7fff;
+		}
 		else
-			*sst &= 0xffff;
+			*sst = 0x8000;
 	}
+	else
+		*sst = 0x7fff;
 
 	if (dolod)
 	{
@@ -9020,41 +9074,53 @@ STRICTINLINE void tclod_1cycle_current(INT32* sss, INT32* sst, INT32 nexts, INT3
 	int lodclamp = 0;
 	INT32 lod = 0;
 	UINT32 l_tile = 0, magnify = 0, distant = 0;
-	int tempanded;
+	int tempanded, temps = *sss, tempt = *sst;
 
 	
 	
 	
 	
-	if (*sss & 0x40000)
-		*sss = 0x7fff;
-	else if (*sss & 0x20000)
-		*sss = 0x8000;
-	else
+	if (!(temps & 0x40000))
 	{
-		tempanded = *sss & 0x18000;
-		if (tempanded == 0x8000)
-			*sss = 0x7fff;
-		else if (tempanded == 0x10000)
+		if (!(temps & 0x20000))
+		{
+			tempanded = temps & 0x18000;
+			if (tempanded != 0x8000)
+			{
+				if (tempanded != 0x10000)
+					*sss &= 0xffff;
+				else
+					*sss = 0x8000;
+			}
+			else
+				*sss = 0x7fff;
+		}
+		else
 			*sss = 0x8000;
-		else
-			*sss &= 0xffff;
 	}
-
-	if (*sst & 0x40000)
-		*sst = 0x7fff;
-	else if (*sst & 0x20000)
-		*sst = 0x8000;
 	else
+		*sss = 0x7fff;
+
+	if (!(tempt & 0x40000))
 	{
-		tempanded = *sst & 0x18000;
-		if (tempanded == 0x8000)
-			*sst = 0x7fff;
-		else if (tempanded == 0x10000)
-			*sst = 0x8000;
+		if (!(tempt & 0x20000))
+		{
+			tempanded = tempt & 0x18000;
+			if (tempanded != 0x8000)
+			{
+				if (tempanded != 0x10000)
+					*sst &= 0xffff;
+				else
+					*sst = 0x8000;
+			}
+			else
+				*sst = 0x7fff;
+		}
 		else
-			*sst &= 0xffff;
+			*sst = 0x8000;
 	}
+	else
+		*sst = 0x7fff;
 
 	if (dolod)
 	{
@@ -9146,38 +9212,50 @@ STRICTINLINE void tclod_1cycle_next(INT32* sss, INT32* sst, INT32 s, INT32 t, IN
 	int lodclamp = 0;
 	INT32 lod = 0;
 	UINT32 l_tile = 0, magnify = 0, distant = 0;
-	int tempanded;
+	int tempanded, temps = *sss, tempt = *sst;
 
 	
-	if (*sss & 0x40000)
-		*sss = 0x7fff;
-	else if (*sss & 0x20000)
-		*sss = 0x8000;
-	else
+	if (!(temps & 0x40000))
 	{
-		tempanded = *sss & 0x18000;
-		if (tempanded == 0x8000)
-			*sss = 0x7fff;
-		else if (tempanded == 0x10000)
+		if (!(temps & 0x20000))
+		{
+			tempanded = temps & 0x18000;
+			if (tempanded != 0x8000)
+			{
+				if (tempanded != 0x10000)
+					*sss &= 0xffff;
+				else
+					*sss = 0x8000;
+			}
+			else
+				*sss = 0x7fff;
+		}
+		else
 			*sss = 0x8000;
-		else
-			*sss &= 0xffff;
 	}
-
-	if (*sst & 0x40000)
-		*sst = 0x7fff;
-	else if (*sst & 0x20000)
-		*sst = 0x8000;
 	else
+		*sss = 0x7fff;
+
+	if (!(tempt & 0x40000))
 	{
-		tempanded = *sst & 0x18000;
-		if (tempanded == 0x8000)
-			*sst = 0x7fff;
-		else if (tempanded == 0x10000)
-			*sst = 0x8000;
+		if (!(tempt & 0x20000))
+		{
+			tempanded = tempt & 0x18000;
+			if (tempanded != 0x8000)
+			{
+				if (tempanded != 0x10000)
+					*sst &= 0xffff;
+				else
+					*sst = 0x8000;
+			}
+			else
+				*sst = 0x7fff;
+		}
 		else
-			*sst &= 0xffff;
+			*sst = 0x8000;
 	}
+	else
+		*sst = 0x7fff;
 
 	if (dolod)
 	{
@@ -9324,38 +9402,49 @@ STRICTINLINE void tclod_copy(INT32* sss, INT32* sst, INT32 s, INT32 t, INT32 w, 
 	INT32 lod = 0;
 	UINT32 l_tile = 0, magnify = 0, distant = 0;
 
-	int tempanded;
-	if (*sss & 0x40000)
-		*sss = 0x7fff;
-	else if (*sss & 0x20000)
-		*sss = 0x8000;
-	else
+	int tempanded, temps = *sss, tempt = *sst;
+
+	if (!(temps & 0x40000))
 	{
-		tempanded = *sss & 0x18000;
-		if (tempanded == 0x8000)
-			*sss = 0x7fff;
-		else if (tempanded == 0x10000)
+		if (!(temps & 0x20000))
+		{
+			tempanded = temps & 0x18000;
+			if (tempanded != 0x8000)
+			{
+				if (tempanded != 0x10000)
+					*sss &= 0xffff;
+				else
+					*sss = 0x8000;
+			}
+			else
+				*sss = 0x7fff;
+		}
+		else
 			*sss = 0x8000;
-		else
-			*sss &= 0xffff;
 	}
-
-	if (*sst & 0x40000)
-		*sst = 0x7fff;
-	else if (*sst & 0x20000)
-		*sst = 0x8000;
 	else
-	{
-		tempanded = *sst & 0x18000;
-		if (tempanded == 0x8000)
-			*sst = 0x7fff;
-		else if (tempanded == 0x10000)
-			*sst = 0x8000;
-		else
-			*sst &= 0xffff;
-	}
+		*sss = 0x7fff;
 
-	
+	if (!(tempt & 0x40000))
+	{
+		if (!(tempt & 0x20000))
+		{
+			tempanded = tempt & 0x18000;
+			if (tempanded != 0x8000)
+			{
+				if (tempanded != 0x10000)
+					*sst &= 0xffff;
+				else
+					*sst = 0x8000;
+			}
+			else
+				*sst = 0x7fff;
+		}
+		else
+			*sst = 0x8000;
+	}
+	else
+		*sst = 0x7fff;	
 
 	if (other_modes.tex_lod_en)
 	{
