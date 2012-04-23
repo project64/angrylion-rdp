@@ -562,6 +562,7 @@ INT32 ge_two_table[128];
 INT32 log2table[256];
 UINT8 tcdivshifttable[0x8000];
 INT32 tlu_rcp_table[0x4000];
+UINT8 bldiv_hwaccurate_table[0x8000];
 INT32 clamp_t_diff[8];
 INT32 clamp_s_diff[8];
 CVtcmaskDERIVATIVE cvarray[0x100];
@@ -607,6 +608,7 @@ STRICTINLINE void tcmask(INT32* S, INT32* T, INT32 num);
 STRICTINLINE void tcmask(INT32* S, INT32* T, INT32 num)
 {
 	INT32 wrap;
+	
 	
 
 	if (tile[num].mask_s)
@@ -739,6 +741,9 @@ STRICTINLINE void tcmask_copy(INT32* S, INT32* S1, INT32* S2, INT32* S3, INT32* 
 
 STRICTINLINE void tcshift_cycle(INT32* S, INT32* T, INT32* maxs, INT32* maxt, UINT32 num)
 {
+
+
+
 	INT32 coord = SIGN16(*S);
 	INT32 shifter = tile[num].shift_s;
 
@@ -761,7 +766,6 @@ STRICTINLINE void tcshift_cycle(INT32* S, INT32* T, INT32* maxs, INT32* maxt, UI
 		coord <<= (16 - shifter);
 	*T = coord = SIGN16(coord);
 	*maxt = ((coord >> 3) >= tile[num].th);
-
 }	
 
 
@@ -2031,6 +2035,34 @@ INLINE void precalculate_everything(void)
 		
 		tlu_rcp_table[i] = (((tempslope * wnorm) >> 10) + temppoint) & 0x7fff;
 		
+	}
+
+	
+	int d = 0, n = 0, temp = 0, res = 0, invd = 0, nbit = 0;
+	int ps[9];
+
+	for (i = 0; i < 0x8000; i++)
+	{
+		res = 0;
+		d = (i >> 11) & 0xf;
+		n = i & 0x7ff;
+		invd = (~d) & 0xf;
+		
+
+		temp = invd + (n >> 8) + 1;
+		ps[0] = temp & 7;
+		for (k = 0; k < 8; k++)
+		{
+			nbit = (n >> (7 - k)) & 1;
+			if (res & (0x100 >> k))
+				temp = invd + (ps[k] << 1) + nbit + 1;
+			else
+				temp = d + (ps[k] << 1) + nbit;
+			ps[k + 1] = temp & 7;
+			if (temp & 0x10)
+				res |= (1 << (7 - k));
+		}
+		bldiv_hwaccurate_table[i] = res;
 	}
 }
 
@@ -7153,11 +7185,10 @@ STRICTINLINE void blender_equation_cycle0(int* r, int* g, int* b, int bsel_speci
 		
 		
 		
-		
-			*r /= sum;
-			*g /= sum; 
-			*b /= sum;
-		
+		sum <<= 11;
+		*r = bldiv_hwaccurate_table[sum | (*r)];
+		*g = bldiv_hwaccurate_table[sum | (*g)];
+		*b = bldiv_hwaccurate_table[sum | (*b)];
 	}
 	else
 	{
@@ -7208,10 +7239,10 @@ STRICTINLINE void blender_equation_cycle1(int* r, int* g, int* b, int bsel_speci
 	if (!other_modes.force_blend)
 	{
 		sum = (blend1a >> 2) + (blend2a >> 2) + 1;
-
-		*r /= sum; 
-		*g /= sum; 
-		*b /= sum;
+		sum <<= 11;
+		*r = bldiv_hwaccurate_table[sum | (*r)];
+		*g = bldiv_hwaccurate_table[sum | (*g)];
+		*b = bldiv_hwaccurate_table[sum | (*b)];
 	}
 	else
 	{
