@@ -4800,6 +4800,8 @@ void render_spans_2cycle(int start, int end, int tilenum, int flip)
 		scdiff = flip ? (xendsc - xend) : (xend - xendsc);
 		
 		
+		
+
 		if (scdiff)
 		{
 			r += (drinc * scdiff);
@@ -4870,6 +4872,9 @@ void render_spans_2cycle(int start, int end, int tilenum, int flip)
 			combiner_2cycle(adith);
 				
 			fbread_ptr(curpixel);
+			
+			
+			
 			if (z_compare(zbcur, zhbcur, sz, dzpix, dzpixenc))
 			{
 				if (blender_2cycle(&fir, &fig, &fib, cdith, partialreject, bsel0, bsel1))
@@ -4877,12 +4882,20 @@ void render_spans_2cycle(int start, int end, int tilenum, int flip)
 					fbwrite_ptr(curpixel, fir, fig, fib);
 					if (other_modes.z_update_en)
 						z_store(zbcur, zhbcur, sz, dzpixenc);
+					
 				}
 			}
 			
 			
 			
 			
+			
+			
+			
+			
+			
+			
+
 			memory_color = pre_memory_color;
 			pastblshifta = blshifta;
 			pastblshiftb = blshiftb;
@@ -7558,6 +7571,7 @@ INLINE void fbread2_16(UINT32 curpixel)
 		curpixel_memcvg = 7;
 		pre_memory_color.a = 0xe0;
 	}
+	
 }
 
 INLINE void fbread_32(UINT32 curpixel)
@@ -7832,7 +7846,14 @@ STRICTINLINE UINT32 dz_decompress(UINT32 dz_compressed)
 STRICTINLINE UINT32 dz_compress(UINT32 value)
 {
 	int j = 0;
-	for (; value > 1; j++, value >>= 1);
+	if (value & 0xff00)
+		j |= 8;
+	if (value & 0xf0f0)
+		j |= 4;
+	if (value & 0xcccc)
+		j |= 2;
+	if (value & 0xaaaa)
+		j |= 1;
 	return j;
 }
 
@@ -7863,14 +7884,19 @@ INLINE UINT32 z_compare(UINT32 zcurpixel, UINT32 dzcurpixel, UINT32 sz, UINT16 d
 		UINT32 dzmemmodifier; 
 		if (precision_factor < 3)
 		{
-			dzmemmodifier = 16 >> precision_factor;
-			if (dzmem == 0x8000)
+			if (dzmem != 0x8000)
+			{
+				dzmemmodifier = 16 >> precision_factor;
+				dzmem <<= 1;
+				if (dzmem <= dzmemmodifier)
+					dzmem = dzmemmodifier;
+			}
+			else
+			{
 				force_coplanar = 1;
-			dzmem <<= 1;
-			if (dzmem <= dzmemmodifier)
-				dzmem = dzmemmodifier;
-			if (!dzmem)
-				dzmem = 0xffff;
+				dzmem <<= 1;
+			}
+			
 		}
 		if (dzmem > 0x8000)
 			dzmem = 0xffff;
@@ -7994,6 +8020,8 @@ STRICTINLINE INT32 normalize_dzpix(INT32 sum)
 		return 0x8000;
 	if (!(sum & 0xffff))
 		return 1;
+	if (sum == 1)
+		return 3;
 	for(int count = 0x2000; count > 0; count >>= 1)
     {
       if (sum & count)
