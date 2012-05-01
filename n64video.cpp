@@ -18,7 +18,7 @@ extern GFX_INFO gfx;
 
 #define GET_LOW(x)	(((x) & 0x3e) << 2)
 #define GET_MED(x)	(((x) & 0x7c0) >> 3)
-#define GET_HI(x)	(((x) & 0xf800) >> 8)
+#define GET_HI(x)	(((x) >> 8) & 0xf8)
 
 
 #define GET_LOW_RGBA16_TMEM(x)	(replicated_rgba[((x) >> 1) & 0x1f])
@@ -4259,7 +4259,7 @@ void fetch_qword_copy(UINT32* hidword, UINT32* lowdword, INT32 ssss, INT32 ssst,
 
 STRICTINLINE void texture_pipeline_cycle(COLOR* TEX, COLOR* prev, INT32 SSS, INT32 SST, UINT32 tilenum, UINT32 cycle)											
 {
-#define TRELATIVE(x, y) 	(((((x) >> 3) - (y)) << 3) | ((x) & 7));
+#define TRELATIVE(x, y) 	((x) - ((y) << 3));
 	INT32 maxs, maxt, invt0r, invt0g, invt0b, invt0a;
 	INT32 sfrac, tfrac, invsf, invtf;
 	int upper = 0;
@@ -4677,7 +4677,6 @@ void render_spans_1cycle(int start, int end, int tilenum, int flip)
 			fbread_ptr(curpixel);
 			if (z_compare(zbcur, zhbcur, sz, dzpix, dzpixenc))
 			{
-
 				if (blender_1cycle(&fir, &fig, &fib, cdith, partialreject, bsel0))
 				{
 					fbwrite_ptr(curpixel, fir, fig, fib);
@@ -8227,7 +8226,7 @@ STRICTINLINE void video_filter32(int* endr, int* endg, int* endb, UINT32 fboffse
 	penuming = (~penuming) & 0xff;
 	penuminb = (~penuminb) & 0xff;
 
-	INT32 coeff = 7 - (INT32)centercvg;
+	UINT32 coeff = 7 - centercvg;
 	colr = penuminr + penumaxr - (r << 1);
 	colg = penuming + penumaxg - (g << 1);
 	colb = penuminb + penumaxb - (b << 1);
@@ -9186,26 +9185,35 @@ STRICTINLINE void tclod_1cycle_current(INT32* sss, INT32* sst, INT32 nexts, INT3
 		int nextscan = scanline + 1;
 
 		
-		if (!sigs->endspan || !sigs->longspan || !span[nextscan].validline)
+		if (span[nextscan].validline)
 		{
-			if ((sigs->preendspan && sigs->longspan) || (sigs->endspan && sigs->midspan))
+			if (!sigs->endspan || !sigs->longspan)
 			{
-				farsw = (w - dwinc) >> 16;
-				fars = (s - dsinc) >> 16;
-				fart = (t - dtinc) >> 16;
+				if ((sigs->preendspan && sigs->longspan) || (sigs->endspan && sigs->midspan))
+				{
+					farsw = (w - dwinc) >> 16;
+					fars = (s - dsinc) >> 16;
+					fart = (t - dtinc) >> 16;
+				}
+				else
+				{
+					farsw = (w + (dwinc << 1)) >> 16;
+					fars = (s + (dsinc << 1)) >> 16;
+					fart = (t + (dtinc << 1)) >> 16;
+				}
 			}
 			else
 			{
-				farsw = (w + (dwinc << 1)) >> 16;
-				fars = (s + (dsinc << 1)) >> 16;
-				fart = (t + (dtinc << 1)) >> 16;
+				fart = (span[nextscan].t + dtinc) >> 16; 
+				fars = (span[nextscan].s + dsinc) >> 16; 
+				farsw = (span[nextscan].w + dwinc) >> 16;
 			}
 		}
 		else
 		{
-			fart = (span[nextscan].t + dtinc) >> 16; 
-			fars = (span[nextscan].s + dsinc) >> 16; 
-			farsw = (span[nextscan].w + dwinc) >> 16;
+			farsw = (w + (dwinc << 1)) >> 16;
+			fars = (s + (dsinc << 1)) >> 16;
+			fart = (t + (dtinc << 1)) >> 16;
 		}
 
 		if (other_modes.persp_tex_en)
@@ -9318,64 +9326,77 @@ STRICTINLINE void tclod_1cycle_next(INT32* sss, INT32* sst, INT32 s, INT32 t, IN
 
 	if (dolod)
 	{
+		
 		int nextscan = scanline + 1;
-		if (!sigs->nextspan)
+		
+		if (span[nextscan].validline)
 		{
-			if (!sigs->endspan || !sigs->longspan || !span[nextscan].validline)
+			if (!sigs->nextspan)
 			{
-				nextsw = (w + dwinc) >> 16;
-				nexts = (s + dsinc) >> 16;
-				nextt = (t + dtinc) >> 16;
-				if ((sigs->preendspan && sigs->longspan) || (sigs->endspan && sigs->midspan))
+				if (!sigs->endspan || !sigs->longspan)
 				{
+					nextsw = (w + dwinc) >> 16;
+					nexts = (s + dsinc) >> 16;
+					nextt = (t + dtinc) >> 16;
+					if ((sigs->preendspan && sigs->longspan) || (sigs->endspan && sigs->midspan))
+					{
+						farsw = (w - dwinc) >> 16;
+						fars = (s - dsinc) >> 16;
+						fart = (t - dtinc) >> 16;
+					}
+					else
+					{
+						farsw = (w + (dwinc << 1)) >> 16;
+						fars = (s + (dsinc << 1)) >> 16;
+						fart = (t + (dtinc << 1)) >> 16;
+					}
+				}
+				else
+				{
+					nextt = span[nextscan].t;
+					nexts = span[nextscan].s;
+					nextsw = span[nextscan].w;
+					fart = (nextt + dtinc) >> 16; 
+					fars = (nexts + dsinc) >> 16; 
+					farsw = (nextsw + dwinc) >> 16;
+					nextt >>= 16;
+					nexts >>= 16;
+					nextsw >>= 16;
+				}
+			}
+			else
+			{
+				if (sigs->longspan || sigs->midspan)
+				{
+					nextt = span[nextscan].t + dtinc;
+					nexts = span[nextscan].s + dsinc;
+					nextsw = span[nextscan].w + dwinc;
+					fart = (nextt + dtinc) >> 16; 
+					fars = (nexts + dsinc) >> 16; 
+					farsw = (nextsw + dwinc) >> 16;
+					nextt >>= 16;
+					nexts >>= 16;
+					nextsw >>= 16;
+				}
+				else
+				{
+					nextsw = (w + dwinc) >> 16;
+					nexts = (s + dsinc) >> 16;
+					nextt = (t + dtinc) >> 16;
 					farsw = (w - dwinc) >> 16;
 					fars = (s - dsinc) >> 16;
 					fart = (t - dtinc) >> 16;
 				}
-				else
-				{
-					farsw = (w + (dwinc << 1)) >> 16;
-					fars = (s + (dsinc << 1)) >> 16;
-					fart = (t + (dtinc << 1)) >> 16;
-				}
-			}
-			else
-			{
-				nextt = span[nextscan].t;
-				nexts = span[nextscan].s;
-				nextsw = span[nextscan].w;
-				fart = (nextt + dtinc) >> 16; 
-				fars = (nexts + dsinc) >> 16; 
-				farsw = (nextsw + dwinc) >> 16;
-				nextt >>= 16;
-				nexts >>= 16;
-				nextsw >>= 16;
 			}
 		}
 		else
 		{
-			if ((sigs->longspan || sigs->midspan) && span[nextscan].validline)
-			
-			{
-				nextt = span[nextscan].t + dtinc;
-				nexts = span[nextscan].s + dsinc;
-				nextsw = span[nextscan].w + dwinc;
-				fart = (nextt + dtinc) >> 16; 
-				fars = (nexts + dsinc) >> 16; 
-				farsw = (nextsw + dwinc) >> 16;
-				nextt >>= 16;
-				nexts >>= 16;
-				nextsw >>= 16;
-			}
-			else
-			{
-				nextsw = (w + dwinc) >> 16;
-				nexts = (s + dsinc) >> 16;
-				nextt = (t + dtinc) >> 16;
-				farsw = (w - dwinc) >> 16;
-				fars = (s - dsinc) >> 16;
-				fart = (t - dtinc) >> 16;
-			}
+			nextsw = (w + dwinc) >> 16;
+			nexts = (s + dsinc) >> 16;
+			nextt = (t + dtinc) >> 16;
+			farsw = (w + (dwinc << 1)) >> 16;
+			fars = (s + (dsinc << 1)) >> 16;
+			fart = (t + (dtinc << 1)) >> 16;
 		}
 
 	
