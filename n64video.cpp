@@ -80,6 +80,8 @@ UINT32 double_stretch = 0;
 UINT32 blend_en = 0;
 UINT32 prewrap = 0;
 int dolod = 0;
+int partialreject_1cycle = 0, partialreject_2cycle = 0;
+int special_bsel0 = 0, special_bsel1 = 0;
 int blshifta = 0, blshiftb = 0, pastblshifta = 0, pastblshiftb = 0;
 UINT32 curpixel_memcvg = 0;
 UINT32 plim = 0x3fffff;
@@ -402,8 +404,8 @@ void render_spans_fill(int start, int end, int flip);
 void render_spans_copy(int start, int end, int tilenum, int flip);
 STRICTINLINE void combiner_1cycle(int adseed);
 STRICTINLINE void combiner_2cycle(int adseed);
-INLINE int blender_1cycle(UINT32* fr, UINT32* fg, UINT32* fb, int dith, int partialreject, int bsel0);
-INLINE int blender_2cycle(UINT32* fr, UINT32* fg, UINT32* fb, int dith, int partialreject, int bsel0, int bsel1);
+INLINE int blender_1cycle(UINT32* fr, UINT32* fg, UINT32* fb, int dith);
+INLINE int blender_2cycle(UINT32* fr, UINT32* fg, UINT32* fb, int dith);
 STRICTINLINE void texture_pipeline_cycle(COLOR* TEX, COLOR* prev, INT32 SSS, INT32 SST, UINT32 tilenum, UINT32 cycle);
 STRICTINLINE void tc_pipeline_copy(INT32* sss0, INT32* sss1, INT32* sss2, INT32* sss3, INT32* sst, int tilenum);
 STRICTINLINE void tc_pipeline_load(INT32* sss, INT32* sst, int tilenum, int coord_quad);
@@ -566,6 +568,11 @@ UINT8 bldiv_hwaccurate_table[0x8000];
 INT32 clamp_t_diff[8];
 INT32 clamp_s_diff[8];
 CVtcmaskDERIVATIVE cvarray[0x100];
+
+void (*fbread1_ptr)(UINT32) = fbread_func[0];
+void (*fbread2_ptr)(UINT32) = fbread2_func[0];
+void (*fbwrite_ptr)(UINT32, UINT32, UINT32, UINT32) = fbwrite_func[0];
+void (*fbfill_ptr)(UINT32) = fbfill_func[0];
 
 
 
@@ -2150,7 +2157,7 @@ static const UINT8 magic_matrix[16] =
 	 7,  1,  6, 0
 };
 
-INLINE int blender_1cycle(UINT32* fr, UINT32* fg, UINT32* fb, int dith, int partialreject, int special_bsel)
+INLINE int blender_1cycle(UINT32* fr, UINT32* fg, UINT32* fb, int dith)
 {
 	int r, g, b, dontblend;
 	
@@ -2158,113 +2165,113 @@ INLINE int blender_1cycle(UINT32* fr, UINT32* fg, UINT32* fb, int dith, int part
 	if (alpha_compare(pixel_color.a))
 	{
 
-	
+		
 
-	
-	
-	
-	if (other_modes.antialias_en ? (curpixel_cvg) : (curpixel_cvbit))
-	{
-
-	if (!other_modes.color_on_cvg || prewrap)
-	{
-		dontblend = (partialreject && pixel_color.a >= 0xff);
-		if (!blend_en || dontblend)
+		
+		
+		
+		if (other_modes.antialias_en ? (curpixel_cvg) : (curpixel_cvbit))
 		{
-			r = *blender1a_r[0];
-			g = *blender1a_g[0];
-			b = *blender1a_b[0];
+
+			if (!other_modes.color_on_cvg || prewrap)
+			{
+				dontblend = (partialreject_1cycle && pixel_color.a >= 0xff);
+				if (!blend_en || dontblend)
+				{
+					r = *blender1a_r[0];
+					g = *blender1a_g[0];
+					b = *blender1a_b[0];
+				}
+				else
+				{
+					inv_pixel_color.a =  (~(*blender1b_a[0])) & 0xff;
+					
+					
+					
+					
+
+					blender_equation_cycle0(&r, &g, &b, special_bsel0);
+				}
+			}
+			else
+			{
+				r = *blender2a_r[0];
+				g = *blender2a_g[0];
+				b = *blender2a_b[0];
+			}
+
+			if (other_modes.rgb_dither_sel < 3)
+				rgb_dither(&r, &g, &b, dith);
+			*fr = r;
+			*fg = g;
+			*fb = b;
+			return 1;
 		}
-		else
-		{
-			inv_pixel_color.a =  (~(*blender1b_a[0])) & 0xff;
-			
-			
-			
-			
-
-			blender_equation_cycle0(&r, &g, &b, special_bsel);
+		else 
+			return 0;
 		}
-	}
-	else
-	{
-		r = *blender2a_r[0];
-		g = *blender2a_g[0];
-		b = *blender2a_b[0];
-	}
-
-
-	if (other_modes.rgb_dither_sel < 3)
-		rgb_dither(&r, &g, &b, dith);
-	*fr = r;
-	*fg = g;
-	*fb = b;
-	return 1;
-	}
-	else return 0;
-	}
-	else return 0;
+	else 
+		return 0;
 }
 
-INLINE int blender_2cycle(UINT32* fr, UINT32* fg, UINT32* fb, int dith, int partialreject, int special_bsel0, int special_bsel1)
+INLINE int blender_2cycle(UINT32* fr, UINT32* fg, UINT32* fb, int dith)
 {
-
 	int r, g, b, dontblend;
 
 	
 	if (alpha_compare(pixel_color.a))
 	{
-	
-	if (other_modes.antialias_en ? (curpixel_cvg) : (curpixel_cvbit))
-	{
-
-	
-	inv_pixel_color.a =  (~(*blender1b_a[0])) & 0xff;
-
-	blender_equation_cycle0_2(&r, &g, &b, special_bsel0);
-
-	
-	memory_color = pre_memory_color;
-
-	blended_pixel_color.r = r;
-	blended_pixel_color.g = g;
-	blended_pixel_color.b = b;
-	blended_pixel_color.a = pixel_color.a;
-
-	if (!other_modes.color_on_cvg || prewrap)
-	{
-		dontblend = (partialreject && pixel_color.a >= 0xff);
-		if (!blend_en || dontblend)
+		if (other_modes.antialias_en ? (curpixel_cvg) : (curpixel_cvbit))
 		{
-			r = *blender1a_r[1];
-			g = *blender1a_g[1];
-			b = *blender1a_b[1];
-		}
-		else
-		{
-			inv_pixel_color.a =  (~(*blender1b_a[1])) & 0xff;
-			blender_equation_cycle1(&r, &g, &b, special_bsel1);
-		}
-	}
-	else
-	{
-		r = *blender2a_r[1];
-		g = *blender2a_g[1];
-		b = *blender2a_b[1];
-	}
+			
+			inv_pixel_color.a =  (~(*blender1b_a[0])) & 0xff;
 
-	
+			blender_equation_cycle0_2(&r, &g, &b, special_bsel0);
 
-	if (other_modes.rgb_dither_sel < 3)
-		rgb_dither(&r, &g, &b, dith);
-	*fr = r;
-	*fg = g;
-	*fb = b;
-	return 1;
+			
+			memory_color = pre_memory_color;
+
+			blended_pixel_color.r = r;
+			blended_pixel_color.g = g;
+			blended_pixel_color.b = b;
+			blended_pixel_color.a = pixel_color.a;
+
+			if (!other_modes.color_on_cvg || prewrap)
+			{
+				dontblend = (partialreject_2cycle && pixel_color.a >= 0xff);
+				if (!blend_en || dontblend)
+				{
+					r = *blender1a_r[1];
+					g = *blender1a_g[1];
+					b = *blender1a_b[1];
+				}
+				else
+				{
+					inv_pixel_color.a =  (~(*blender1b_a[1])) & 0xff;
+					blender_equation_cycle1(&r, &g, &b, special_bsel1);
+				}
+			}
+			else
+			{
+				r = *blender2a_r[1];
+				g = *blender2a_g[1];
+				b = *blender2a_b[1];
+			}
+
+			
+
+			if (other_modes.rgb_dither_sel < 3)
+				rgb_dither(&r, &g, &b, dith);
+			*fr = r;
+			*fg = g;
+			*fb = b;
+			return 1;
+		}
+		else 
+			return 0;
 	}
-	else return 0;
-	}
-	else return 0;
+	else 
+		return 0;
 }
 
 
@@ -4306,6 +4313,7 @@ STRICTINLINE void texture_pipeline_cycle(COLOR* TEX, COLOR* prev, INT32 SSS, INT
 		sfrac <<= 3;
 		tfrac <<= 3;
 		
+		
 
 		
 		if (bilerp)
@@ -4361,10 +4369,10 @@ STRICTINLINE void texture_pipeline_cycle(COLOR* TEX, COLOR* prev, INT32 SSS, INT
 				invt0r  = ~t0.r; invt0g = ~t0.g; invt0b = ~t0.b; invt0a = ~t0.a;
 				if (convert)
 				{
-					TEX->r = prev->b + (((((prev->r * (t1.r - t0.r)) + (prev->g * (t2.r - t0.r))) & ~0x3f) + ((invt0r + t3.r) << 6) + 0xc0) >> 8);											
-					TEX->g = prev->b + (((((prev->r * (t1.g - t0.g)) + (prev->g * (t2.g - t0.g))) & ~0x3f) + ((invt0g + t3.g) << 6) + 0xc0) >> 8);											
-					TEX->b = prev->b + (((((prev->r * (t1.b - t0.b)) + (prev->g * (t2.b - t0.b))) & ~0x3f) + ((invt0b + t3.b) << 6) + 0xc0) >> 8);									
-					TEX->a = prev->b + (((((prev->r * (t1.a - t0.a)) + (prev->g * (t2.a - t0.a))) & ~0x3f) + ((invt0a + t3.a) << 6) + 0xc0) >> 8);
+					TEX->r = prev->b + ((((prev->r * (t1.r - t0.r)) + (prev->g * (t2.r - t0.r))) + ((invt0r + t3.r) << 6) + 0xc0) >> 8);											
+					TEX->g = prev->b + ((((prev->r * (t1.g - t0.g)) + (prev->g * (t2.g - t0.g))) + ((invt0g + t3.g) << 6) + 0xc0) >> 8);											
+					TEX->b = prev->b + ((((prev->r * (t1.b - t0.b)) + (prev->g * (t2.b - t0.b))) + ((invt0b + t3.b) << 6) + 0xc0) >> 8);									
+					TEX->a = prev->b + ((((prev->r * (t1.a - t0.a)) + (prev->g * (t2.a - t0.a))) + ((invt0a + t3.a) << 6) + 0xc0) >> 8);
 				}
 				else
 				{
@@ -4507,18 +4515,12 @@ STRICTINLINE void tc_pipeline_load(INT32* sss, INT32* sst, int tilenum, int coor
 
 void render_spans_1cycle(int start, int end, int tilenum, int flip)
 {
-	
-	void (*fbread_ptr)(UINT32) = fbread_func[fb_size];
-	void (*fbwrite_ptr)(UINT32, UINT32, UINT32, UINT32) = fbwrite_func[fb_size];
-
 	int zb = zb_address >> 1;
 	int zhb = zb;
 	int zbcur, zhbcur;
 	UINT8 offx = 0, offy = 0;
 	SPANSIGS sigs;
-		
-	int partialreject = (blender2b_a[0] == &inv_pixel_color.a && blender1b_a[0] == &pixel_color.a);
-	int bsel0 = (blender2b_a[0] == &memory_color.a);
+
 	dolod = other_modes.tex_lod_en || (combiner_rgbmul_r[1] == &lod_frac) || (combiner_alphamul[1] == &lod_frac);
 
 	int prim_tile = tilenum;
@@ -4674,10 +4676,10 @@ void render_spans_1cycle(int start, int end, int tilenum, int flip)
 			get_dither_noise(x, i, &cdith, &adith);
 			combiner_1cycle(adith);
 				
-			fbread_ptr(curpixel);
+			fbread1_ptr(curpixel);
 			if (z_compare(zbcur, zhbcur, sz, dzpix, dzpixenc))
 			{
-				if (blender_1cycle(&fir, &fig, &fib, cdith, partialreject, bsel0))
+				if (blender_1cycle(&fir, &fig, &fib, cdith))
 				{
 					fbwrite_ptr(curpixel, fir, fig, fib);
 					if (other_modes.z_update_en)
@@ -4705,10 +4707,6 @@ void render_spans_1cycle(int start, int end, int tilenum, int flip)
 
 void render_spans_2cycle(int start, int end, int tilenum, int flip)
 {
-	
-	void (*fbread_ptr)(UINT32) = fbread2_func[fb_size];
-	void (*fbwrite_ptr)(UINT32, UINT32, UINT32, UINT32) = fbwrite_func[fb_size];
-
 	int zb = zb_address >> 1;
 	int zhb = zb;
 	int zbcur, zhbcur;
@@ -4727,9 +4725,6 @@ void render_spans_2cycle(int start, int end, int tilenum, int flip)
 	int newtile2 = tile2;
 	int news, newt;
 
-	int partialreject = (blender2b_a[1] == &inv_pixel_color.a && blender1b_a[1] == &pixel_color.a);
-	int bsel0 = (blender2b_a[0] == &memory_color.a);
-	int bsel1 = (blender2b_a[1] == &memory_color.a);
 	dolod = other_modes.tex_lod_en || (combiner_rgbmul_r[0] == &lod_frac) || (combiner_rgbmul_r[1] == &lod_frac) || (combiner_alphamul[0] == &lod_frac) || (combiner_alphamul[1] == &lod_frac);
 
 	int i, j;
@@ -4799,6 +4794,9 @@ void render_spans_2cycle(int start, int end, int tilenum, int flip)
 		scdiff = flip ? (xendsc - xend) : (xend - xendsc);
 		
 		
+		
+		
+
 		
 
 		if (scdiff)
@@ -4870,13 +4868,15 @@ void render_spans_2cycle(int start, int end, int tilenum, int flip)
 			get_dither_noise(x, i, &cdith, &adith);
 			combiner_2cycle(adith);
 				
-			fbread_ptr(curpixel);
+			fbread2_ptr(curpixel);
+			
+			
 			
 			
 			
 			if (z_compare(zbcur, zhbcur, sz, dzpix, dzpixenc))
 			{
-				if (blender_2cycle(&fir, &fig, &fib, cdith, partialreject, bsel0, bsel1))
+				if (blender_2cycle(&fir, &fig, &fib, cdith))
 				{
 					fbwrite_ptr(curpixel, fir, fig, fib);
 					if (other_modes.z_update_en)
@@ -4915,7 +4915,6 @@ void render_spans_2cycle(int start, int end, int tilenum, int flip)
 
 void render_spans_fill(int start, int end, int flip)
 {
-	void (*fbfill_ptr)(UINT32) = fbfill_func[fb_size];
 	if (fb_size == PIXEL_SIZE_4BIT)
 	{
 		rdp_pipeline_crashed = 1;
@@ -6739,6 +6738,13 @@ static void rdp_set_other_modes(UINT32 w1, UINT32 w2)
 					  other_modes.blend_m1a_1, other_modes.blend_m1b_1);
 	SET_BLENDER_INPUT(1, 1, &blender2a_r[1], &blender2a_g[1], &blender2a_b[1], &blender2b_a[1],
 					  other_modes.blend_m2a_1, other_modes.blend_m2b_1);
+
+	
+	partialreject_1cycle = (blender2b_a[0] == &inv_pixel_color.a && blender1b_a[0] == &pixel_color.a);
+	partialreject_2cycle = (blender2b_a[1] == &inv_pixel_color.a && blender1b_a[1] == &pixel_color.a);
+
+	special_bsel0 = (blender2b_a[0] == &memory_color.a);
+	special_bsel1 = (blender2b_a[1] == &memory_color.a);
 }
 
 static void rdp_set_tile_size(UINT32 w1, UINT32 w2)
@@ -6975,6 +6981,12 @@ static void rdp_set_color_image(UINT32 w1, UINT32 w2)
 	fb_size		= (w1 >> 19) & 0x3;
 	fb_width	= (w1 & 0x3ff) + 1;
 	fb_address	= w2 & 0x0ffffff;
+
+	
+	fbread1_ptr = fbread_func[fb_size];
+	fbread2_ptr = fbread2_func[fb_size];
+	fbwrite_ptr = fbwrite_func[fb_size];
+	fbfill_ptr = fbfill_func[fb_size];
 }
 
 
