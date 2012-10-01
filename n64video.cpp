@@ -561,8 +561,7 @@ UINT32 special_9bit_clamptable[512];
 INT32 special_9bit_exttable[512];
 INT32 ge_two_table[128];
 INT32 log2table[256];
-UINT8 tcdivshifttable[0x8000];
-INT32 tlu_rcp_table[0x4000];
+INT32 tcdiv_table[0x8000];
 UINT8 bldiv_hwaccurate_table[0x8000];
 INT32 clamp_t_diff[8];
 INT32 clamp_s_diff[8];
@@ -2028,20 +2027,21 @@ INLINE void precalculate_everything(void)
 
 	
 	
+	
+	
+	
+	
+	int temppoint, tempslope; 
+	int normout;
+	int wnorm;
+	int shift, tlu_rcp;
+
 	for (i = 0; i < 0x8000; i++)
 	{
 		for (k = 1; k <= 14 && !((i << k) & 0x8000); k++) 
 			;
-		tcdivshifttable[i] = k - 1;
-	}
-
-	
-	
-	int temppoint, tempslope, normout;
-	int wnorm;
-	for (i = 0; i < 0x4000; i++)
-	{
-		normout = i;
+		shift = k - 1;
+		normout = (i << shift) & 0x3fff;
 		wnorm = (normout & 0xff) << 2;
 		normout >>= 8;
 
@@ -2052,8 +2052,9 @@ INLINE void precalculate_everything(void)
 
 		tempslope = (tempslope | ~0x3ff) + 1;
 		
-		tlu_rcp_table[i] = (((tempslope * wnorm) >> 10) + temppoint) & 0x7fff;
+		tlu_rcp = (((tempslope * wnorm) >> 10) + temppoint) & 0x7fff;
 		
+		tcdiv_table[i] = shift | (tlu_rcp << 4);
 	}
 
 	
@@ -4585,6 +4586,9 @@ void render_spans_1cycle(int start, int end, int tilenum, int flip)
 					
 	for (i = start; i <= end; i++)
 	{
+		if (span[i].validline)
+		{
+
 		xstart = span[i].lx;
 		xend = span[i].unscrx;
 		xendsc = span[i].rx;
@@ -4622,8 +4626,6 @@ void render_spans_1cycle(int start, int end, int tilenum, int flip)
 		}
 		sigs.startspan = 1;
 
-		if (span[i].validline)
-		{
 		for (j = 0; j <= length; j++)
 		{
 			sr = r >> 14;
@@ -4785,6 +4787,9 @@ void render_spans_2cycle(int start, int end, int tilenum, int flip)
 				
 	for (i = start; i <= end; i++)
 	{
+		if (span[i].validline)
+		{
+
 		xstart = span[i].lx;
 		xend = span[i].unscrx;
 		xendsc = span[i].rx;
@@ -4824,8 +4829,6 @@ void render_spans_2cycle(int start, int end, int tilenum, int flip)
 		}
 		sigs.startspan = 1;
 
-		if (span[i].validline)
-		{
 		for (j = 0; j <= length; j++)
 		{
 			sr = r >> 14;
@@ -5041,6 +5044,9 @@ void render_spans_copy(int start, int end, int tilenum, int flip)
 				
 	for (i = start; i <= end; i++)
 	{
+		if (span[i].validline)
+		{
+
 		s = span[i].s;
 		t = span[i].t;
 		w = span[i].w;
@@ -5053,8 +5059,6 @@ void render_spans_copy(int start, int end, int tilenum, int flip)
 		fbendptr = fb_address + PIXELS_TO_BYTES_SPECIAL4((fb_width * i + xstart), fb_size);
 		length = flip ? (xstart - xendsc) : (xendsc - xstart);
 
-		if (span[i].validline)
-		{
 		
 		
 
@@ -7849,10 +7853,11 @@ STRICTINLINE UINT16 decompress_cvmask_frombyte(UINT8 x)
 
 STRICTINLINE void lookup_cvmask_derivatives(UINT32 mask, UINT8* offx, UINT8* offy)
 {
-	curpixel_cvg = cvarray[mask].cvg;
-	curpixel_cvbit = cvarray[mask].cvbit;
-	*offx = cvarray[mask].xoff;
-	*offy = cvarray[mask].yoff;
+	CVtcmaskDERIVATIVE temp = cvarray[mask];
+	curpixel_cvg = temp.cvg;
+	curpixel_cvbit = temp.cvbit;
+	*offx = temp.xoff;
+	*offy = temp.yoff;
 }
 
 STRICTINLINE void z_store(UINT32 zcurpixel, UINT32 dzcurpixel, UINT32 z, int dzpixenc)
@@ -8271,16 +8276,18 @@ STRICTINLINE void divot_filter(int* r, int* g, int* b, CCVG* centercolor, CCVG* 
 
 
 
+
 	UINT32 leftr, leftg, leftb, rightr, rightg, rightb, centerr, centerg, centerb;
+
+	*r = centercolor->r;
+	*g = centercolor->g;
+	*b = centercolor->b;
 	
 	if ((centercolor->cvg & leftcolor->cvg & rightcolor->cvg) == 7)
 	
 	
 	
 	{
-		*r = centercolor->r;
-		*g = centercolor->g;
-		*b = centercolor->b;
 		return;
 	}
 
@@ -8290,13 +8297,10 @@ STRICTINLINE void divot_filter(int* r, int* g, int* b, CCVG* centercolor, CCVG* 
 	rightr = rightcolor->r;	
 	rightg = rightcolor->g;	
 	rightb = rightcolor->b;
-	centerr = centercolor->r;
-	centerg = centercolor->g;
-	centerb = centercolor->b;
+	centerr = *r;
+	centerg = *g;
+	centerb = *b;
 
-	*r = centerr;
-	*g = centerg;
-	*b = centerb;
 
 	if ((leftr >= centerr && rightr >= leftr) || (leftr >= rightr && centerr >= leftr))
 		*r = leftr;
@@ -8797,12 +8801,12 @@ STRICTINLINE void tcdiv_persp(INT32 ss, INT32 st, INT32 sw, INT32* sss, INT32* s
 
 	int w_carry = 0;
 	int shift; 
-	int normout;
 	int tlu_rcp;
     int sprod, tprod;
 	int outofbounds_s, outofbounds_t;
 	int tempmask;
 	int shift_value;
+	INT32 temps, tempt;
 
 	
 	
@@ -8814,12 +8818,10 @@ STRICTINLINE void tcdiv_persp(INT32 ss, INT32 st, INT32 sw, INT32* sss, INT32* s
 	sw &= 0x7fff;
 
 	
-
-	shift = tcdivshifttable[sw];
 	
-	normout = (sw << shift) & 0x3fff;
-
-	tlu_rcp = tlu_rcp_table[normout];
+	shift = tcdiv_table[sw];
+	tlu_rcp = shift >> 4;
+	shift &= 0xf;
 
 	sprod = SIGN16(ss) * tlu_rcp;
 	tprod = SIGN16(st) * tlu_rcp;
@@ -8833,13 +8835,13 @@ STRICTINLINE void tcdiv_persp(INT32 ss, INT32 st, INT32 sw, INT32* sss, INT32* s
 	if (shift != 0xe)
 	{
 		shift_value = 13 - shift;
-		*sss = sprod = (sprod >> shift_value);
-		*sst = tprod = (tprod >> shift_value);
+		temps = sprod = (sprod >> shift_value);
+		tempt = tprod = (tprod >> shift_value);
 	}
 	else
 	{
-		*sss = sprod << 1;
-		*sst = tprod << 1;
+		temps = sprod << 1;
+		tempt = tprod << 1;
 	}
 	
 	if (outofbounds_s != tempmask && outofbounds_s != 0)
@@ -8864,8 +8866,8 @@ STRICTINLINE void tcdiv_persp(INT32 ss, INT32 st, INT32 sw, INT32* sss, INT32* s
 		overunder_t |= (2 << 17);
 	}
 
-	*sss = (*sss & 0x1ffff) | overunder_s;
-	*sst = (*sst & 0x1ffff) | overunder_t;
+	*sss = (temps & 0x1ffff) | overunder_s;
+	*sst = (tempt & 0x1ffff) | overunder_t;
 }
 
 STRICTINLINE void tclod_2cycle_current(INT32* sss, INT32* sst, INT32 nexts, INT32 nextt, INT32 s, INT32 t, INT32 w, INT32 dsinc, INT32 dtinc, INT32 dwinc, INT32 prim_tile, INT32* t1, INT32* t2)
