@@ -554,7 +554,6 @@ UINT32 gamma_table[0x100];
 UINT32 gamma_dither_table[0x4000];
 UINT16 z_com_table[0x40000];
 UINT32 z_complete_dec_table[0x4000];
-UINT8 compressed_cvmasks[0x10000];
 UINT8 replicated_rgba[32];
 INT32 vi_restore_table[0x400];
 INT32 maskbits_table[16];
@@ -1001,17 +1000,24 @@ int rdp_update()
 	CCVG viaa_array[2048];
 	
 	
+
 	
 	
 	
 	
+
 	
 	
 	
 	
+
+	
+
 	
 	
+
 	
+
 
 	
 
@@ -1288,6 +1294,8 @@ int rdp_update()
 			{
 				for (j = 0; j < vres; j++)
 				{
+					
+
 					x_start = (vi_x_scale >> 16) & 0xfff;
 
 					if (!j)
@@ -1489,6 +1497,8 @@ int rdp_update()
 
 					}
 					y_start += y_add;
+					
+					
 				}
 			}
 			break;
@@ -1513,6 +1523,8 @@ int rdp_update()
 	res = IDirectDrawSurface_Blt(lpddsprimary, &dst, lpddsback, &src, DDBLT_WAIT, 0);
 	if (res != DD_OK && res != DDERR_GENERIC)
 			fatalerror("Scaled blit failed. %x", res);
+
+	
 
 	
 	return 0;
@@ -4378,10 +4390,10 @@ STRICTINLINE void texture_pipeline_cycle(COLOR* TEX, COLOR* prev, INT32 SSS, INT
 				{
 					sfrac >>= 1;
 					tfrac >>= 1;
-					TEX->r = t0.r + (((((sfrac * (t1.r - t0.r)) + (tfrac * (t2.r - t0.r))) & ~0x3f) + ((invt0r + t3.r) << 6) + 0xc0) >> 8);											
-					TEX->g = t0.g + (((((sfrac * (t1.g - t0.g)) + (tfrac * (t2.g - t0.g))) & ~0x3f) + ((invt0g + t3.g) << 6) + 0xc0) >> 8);											
-					TEX->b = t0.b + (((((sfrac * (t1.b - t0.b)) + (tfrac * (t2.b - t0.b))) & ~0x3f) + ((invt0b + t3.b) << 6) + 0xc0) >> 8);									
-					TEX->a = t0.a + (((((sfrac * (t1.a - t0.a)) + (tfrac * (t2.a - t0.a))) & ~0x3f) + ((invt0a + t3.a) << 6) + 0xc0) >> 8);
+					TEX->r = t0.r + ((((sfrac * (t1.r - t0.r)) + (tfrac * (t2.r - t0.r))) + ((invt0r + t3.r) << 6) + 0xc0) >> 8);											
+					TEX->g = t0.g + ((((sfrac * (t1.g - t0.g)) + (tfrac * (t2.g - t0.g))) + ((invt0g + t3.g) << 6) + 0xc0) >> 8);											
+					TEX->b = t0.b + ((((sfrac * (t1.b - t0.b)) + (tfrac * (t2.b - t0.b))) + ((invt0b + t3.b) << 6) + 0xc0) >> 8);									
+					TEX->a = t0.a + ((((sfrac * (t1.a - t0.a)) + (tfrac * (t2.a - t0.a))) + ((invt0a + t3.a) << 6) + 0xc0) >> 8);
 				}
 			}
 		}
@@ -7228,17 +7240,16 @@ STRICTINLINE void blender_equation_cycle0_2(int* r, int* g, int* b, int bsel_spe
 	blend1a = *blender1b_a[0] >> 3;
 	blend2a = *blender2b_a[0] >> 3;
 
-	int mulb;
 	if (bsel_special)
 	{
 		blend1a = (blend1a >> pastblshifta) & 0x3C;
 		blend2a = (blend2a >> pastblshiftb) | 3;
 	}
 	
-	mulb = blend2a + 1;
-	*r = (((*blender1a_r[0]) * blend1a + (*blender2a_r[0]) * mulb) >> 5) & 0xff;
-	*g = (((*blender1a_g[0]) * blend1a + (*blender2a_g[0]) * mulb) >> 5) & 0xff;
-	*b = (((*blender1a_b[0]) * blend1a + (*blender2a_b[0]) * mulb) >> 5) & 0xff;
+	blend2a += 1;
+	*r = (((*blender1a_r[0]) * blend1a + (*blender2a_r[0]) * blend2a) >> 5) & 0xff;
+	*g = (((*blender1a_g[0]) * blend1a + (*blender2a_g[0]) * blend2a) >> 5) & 0xff;
+	*b = (((*blender1a_b[0]) * blend1a + (*blender2a_b[0]) * blend2a) >> 5) & 0xff;
 }
 
 STRICTINLINE void blender_equation_cycle1(int* r, int* g, int* b, int bsel_special)
@@ -7281,21 +7292,21 @@ STRICTINLINE void blender_equation_cycle1(int* r, int* g, int* b, int bsel_speci
 
 STRICTINLINE UINT32 rightcvghex(UINT32 x, UINT32 fmask)
 {
-	UINT32 covered = ((x >> 1) & 3) + (x & 1);
-	covered = (0xf0 >> covered) & 0xf;
+	UINT32 covered = ((x & 7) + 1) >> 1;
+	covered = 0xf0 >> covered;
 	return (covered & fmask);
 }
 
 STRICTINLINE UINT32 leftcvghex(UINT32 x, UINT32 fmask) 
 {
-	UINT32 covered = ((x >> 1) & 3) + (x & 1);
+	UINT32 covered = ((x & 7) + 1) >> 1;
 	covered = 0xf >> covered;
 	return (covered & fmask);
 }
 
 STRICTINLINE void compute_cvg_flip(INT32* majorx, INT32* minorx, INT32* invalyscan, INT32 scanline)
 {
-	INT32 purgestart = 0xfff, purgeend = 0;
+	INT32 purgestart, purgeend;
 	int writablescanline = !(scanline & ~0x3ff);
 	int i, length, fmask, maskshift, fmaskshifted;
 	INT32 fleft, fright, minorcur, majorcur, minorcurint, majorcurint, samecvg;
@@ -7311,17 +7322,23 @@ STRICTINLINE void compute_cvg_flip(INT32* majorx, INT32* minorx, INT32* invalysc
 			memset(&span[scanline].mask[purgestart], 0, (length + 1) << 2);
 			for(i = 0; i < 4; i++)
 			{
-				minorcur = minorx[i];
-				majorcur = majorx[i];
-				minorcurint = minorcur >> 3;
-				majorcurint = majorcur >> 3;
-				fmask = (i & 1) ? 5 : 0xa;
-				maskshift = (i ^ 3) << 2;
-				fmaskshifted = fmask << maskshift;
-				fleft = majorcurint + 1;
-				fright = minorcurint - 1;
 				if (!invalyscan[i])
 				{
+					minorcur = minorx[i];
+					majorcur = majorx[i];
+					minorcurint = minorcur >> 3;
+					majorcurint = majorcur >> 3;
+					fmask = 0xa >> (i & 1);
+
+					
+					
+					
+					
+					maskshift = ((i ^ 3) & 2) << 1;
+					fmaskshifted = fmask << maskshift;
+					fleft = majorcurint + 1;
+					fright = minorcurint - 1;
+
 					if (minorcurint != majorcurint)
 					{
 						span[scanline].mask[minorcurint] |= (rightcvghex(minorcur, fmask) << maskshift);
@@ -7342,7 +7359,7 @@ STRICTINLINE void compute_cvg_flip(INT32* majorx, INT32* minorx, INT32* invalysc
 
 STRICTINLINE void compute_cvg_noflip(INT32* majorx, INT32* minorx, INT32* invalyscan, INT32 scanline)
 {
-	INT32 purgestart = 0xfff, purgeend = 0;
+	INT32 purgestart, purgeend;
 	int writablescanline = !(scanline & ~0x3ff);
 	int i, length, fmask, maskshift, fmaskshifted;
 	INT32 fleft, fright, minorcur, majorcur, minorcurint, majorcurint, samecvg;
@@ -7359,17 +7376,18 @@ STRICTINLINE void compute_cvg_noflip(INT32* majorx, INT32* minorx, INT32* invaly
 
 			for(i = 0; i < 4; i++)
 			{
-				minorcur = minorx[i];
-				majorcur = majorx[i];
-				minorcurint = minorcur >> 3;
-				majorcurint = majorcur >> 3;
-				fmask = (i & 1) ? 5 : 0xa;
-				maskshift = (i ^ 3) << 2;
-				fmaskshifted = fmask << maskshift;
-				fleft = minorcurint + 1;
-				fright = majorcurint - 1;
 				if (!invalyscan[i])
 				{
+					minorcur = minorx[i];
+					majorcur = majorx[i];
+					minorcurint = minorcur >> 3;
+					majorcurint = majorcur >> 3;
+					fmask = 0xa >> (i & 1);
+					maskshift = ((i ^ 3) & 2) << 1;
+					fmaskshifted = fmask << maskshift;
+					fleft = minorcurint + 1;
+					fright = majorcurint - 1;
+
 					if (minorcurint != majorcurint)
 					{
 						span[scanline].mask[minorcurint] |= (leftcvghex(minorcur, fmask) << maskshift);
@@ -7778,6 +7796,9 @@ INLINE void z_build_com_table(void)
 	case 0x7f:
 		altmem = ((z << 2) & 0x1ffc) | 0xe000;
 		break;
+	default:
+		fatalerror("z_build_com_table failed");
+		break;
 	}
 
     z_com_table[z] = altmem;
@@ -7792,13 +7813,7 @@ INLINE void precalc_cvmask_derivatives(void)
 	UINT8 offx = 0, offy = 0;
 	const UINT8 yarray[16] = {0, 0, 1, 0, 2, 0, 1, 0, 3, 0, 1, 0, 2, 0, 1, 0};
 	const UINT8 xarray[16] = {0, 3, 2, 2, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0};
-	
-	for (; i < 0x10000; i++)
-	{
-		compressed_cvmasks[i] = (i & 1) | ((i & 4) >> 1) | ((i & 0x20) >> 3) | ((i & 0x80) >> 4) |
-		((i & 0x100) >> 4) | ((i & 0x400) >> 5) | ((i & 0x2000) >> 7) | ((i & 0x8000) >> 8);
-	}
-	i = 0;
+
 	
 	for (; i < 0x100; i++)
 	{
@@ -7834,12 +7849,10 @@ STRICTINLINE UINT16 decompress_cvmask_frombyte(UINT8 x)
 
 STRICTINLINE void lookup_cvmask_derivatives(UINT32 mask, UINT8* offx, UINT8* offy)
 {
-	UINT32 index;
-	index = compressed_cvmasks[mask];
-	curpixel_cvg = cvarray[index].cvg;
-	curpixel_cvbit = cvarray[index].cvbit;
-	*offx = cvarray[index].xoff;
-	*offy = cvarray[index].yoff;
+	curpixel_cvg = cvarray[mask].cvg;
+	curpixel_cvbit = cvarray[mask].cvbit;
+	*offx = cvarray[mask].xoff;
+	*offy = cvarray[mask].yoff;
 }
 
 STRICTINLINE void z_store(UINT32 zcurpixel, UINT32 dzcurpixel, UINT32 z, int dzpixenc)
@@ -8006,10 +8019,10 @@ STRICTINLINE int finalize_spanalpha()
 		{
 			finalcvg = curpixel_cvg + curpixel_memcvg;
 		}
-		if (finalcvg & 8)
-			finalcvg = 7;
-		else
+		if (!(finalcvg & 8))
 			finalcvg &= 7;
+		else
+			finalcvg = 7;
 		break;
 	case CVG_WRAP:
 		finalcvg = (curpixel_cvg + curpixel_memcvg) & 7;
@@ -8790,6 +8803,7 @@ STRICTINLINE void tcdiv_persp(INT32 ss, INT32 st, INT32 sw, INT32* sss, INT32* s
 	int outofbounds_s, outofbounds_t;
 	int tempmask;
 	int shift_value;
+
 	
 	
 	int overunder_s = 0, overunder_t = 0;
@@ -8798,6 +8812,8 @@ STRICTINLINE void tcdiv_persp(INT32 ss, INT32 st, INT32 sw, INT32* sss, INT32* s
 		w_carry = 1;
 
 	sw &= 0x7fff;
+
+	
 
 	shift = tcdivshifttable[sw];
 	
@@ -8829,27 +8845,27 @@ STRICTINLINE void tcdiv_persp(INT32 ss, INT32 st, INT32 sw, INT32* sss, INT32* s
 	if (outofbounds_s != tempmask && outofbounds_s != 0)
 	{
 		if (!(sprod & (1 << 29)))
-			overunder_s = 2;
+			overunder_s = 2 << 17;
 		else
-			overunder_s = 1;
+			overunder_s = 1 << 17;
 	}
 
 	if (outofbounds_t != tempmask && outofbounds_t != 0)
 	{
 		if (!(tprod & (1 << 29)))
-			overunder_t = 2;
+			overunder_t = 2 << 17;
 		else
-			overunder_t = 1;
+			overunder_t = 1 << 17;
 	}
 
 	if (w_carry)
 	{
-		overunder_s |= 2;
-		overunder_t |= 2;
+		overunder_s |= (2 << 17);
+		overunder_t |= (2 << 17);
 	}
 
-	*sss = (*sss & 0x1ffff) | (overunder_s << 17);
-	*sst = (*sst & 0x1ffff) | (overunder_t << 17);
+	*sss = (*sss & 0x1ffff) | overunder_s;
+	*sst = (*sst & 0x1ffff) | overunder_t;
 }
 
 STRICTINLINE void tclod_2cycle_current(INT32* sss, INT32* sst, INT32 nexts, INT32 nextt, INT32 s, INT32 t, INT32 w, INT32 dsinc, INT32 dtinc, INT32 dwinc, INT32 prim_tile, INT32* t1, INT32* t2)

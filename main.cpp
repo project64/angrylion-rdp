@@ -1,7 +1,7 @@
 #include "z64.h"
 #include "Gfx #1.3.h"
 
-extern const int screen_width = 800, screen_height = 600;
+extern const int screen_width = 1024, screen_height = 768;
 
 LPDIRECTDRAW7 lpdd = 0;
 LPDIRECTDRAWSURFACE7 lpddsprimary; 
