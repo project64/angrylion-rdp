@@ -1026,7 +1026,6 @@ int rdp_init()
 	return 0;
 }
 
-
 int rdp_update()
 {
 
@@ -1121,13 +1120,16 @@ int rdp_update()
 	INT32 v_start = (vi_v_start >> 16) & 0x3ff;
 	INT32 h_start = ((vi_h_start >> 16) & 0x3ff) - (ispal ? 128 : 108);
 
-	INT32 addtoxstart = 0;
+	UINT32 x_start = (vi_x_scale >> 16) & 0xfff;
+	UINT32 x_add = vi_x_scale & 0xfff;
 
 	if (h_start < 0)
 	{
-		addtoxstart = -h_start;
+		x_start += (x_add * (-h_start));
 		h_start = 0;
 	}
+
+	int cache_marker_init = (x_start >> 10) - 1;
 
 	INT32 v_end = vi_v_start & 0x3ff;
 	INT32 v_sync = vi_v_sync & 0x3ff;
@@ -1191,10 +1193,6 @@ int rdp_update()
 	int r = 0, g = 0, b = 0, nextr = 0, nextg = 0, nextb = 0;
 	int scanr = 0, scang = 0, scanb = 0, scannextr = 0, scannextg = 0, scannextb = 0;
 	int xfrac = 0, yfrac = 0; 
-	UINT32 x_start = (vi_x_scale >> 16) & 0xfff;
-	x_start += (addtoxstart << 10);
-	UINT32 x_add = vi_x_scale & 0xfff;
-	UINT32 cur_x = 0, next_x = 0, far_x = 0;
 	UINT32 y_start = (vi_y_scale >> 16) & 0xfff;
 	UINT32 y_add = vi_y_scale & 0xfff;
 	int vi_width_low = vi_width & 0xfff;
@@ -1202,6 +1200,8 @@ int rdp_update()
 	int line_x = 0, next_line_x = 0, prev_line_x = 0, far_line_x = 0;
 	int cache_marker = 0, cache_next_marker = 0;
 	int scan_x = 0, next_scan_x = 0, far_scan_x = 0;
+	int cur_x = 0, next_x = 0, far_x = 0;
+	int notlasthor = 0, notlastvert = 0;
 
 	
 	UINT32 pix = 0;
@@ -1341,8 +1341,7 @@ int rdp_update()
 
 					if (!j)
 					{
-						cache_marker = (x_start >> 10) - 1;
-						cache_next_marker = (x_start >> 10) - 1;
+						cache_marker = cache_next_marker = cache_marker_init;
 					}
 					else
 					{
@@ -1351,27 +1350,22 @@ int rdp_update()
 						if ((y_start >> 10) == (prevy + 1))
 						{
 							cache_marker = cache_next_marker;
-							cache_next_marker = (x_start >> 10) - 1;
+							cache_next_marker = cache_marker_init;
 							
 							viaatemp = viaa_cache;
 							viaa_cache = viaa_cache_next;
 							viaa_cache_next = viaatemp;
 						}
-						else if ((y_start >> 10) == prevy)
+						else if ((y_start >> 10) != prevy)
 						{
-						
-						}
-						else
-						{
-							cache_marker = (x_start >> 10) - 1;
-							cache_next_marker = (x_start >> 10) - 1;
+							cache_marker = cache_next_marker = cache_marker_init;
 						}
 					}
 
 					d = &PreScale[prescale_ptr];
 
 					pixels = vi_width_low * (y_start >> 10);
-					nextpixels = vi_width_low * ((y_start >> 10) + 1);
+					nextpixels = pixels + vi_width_low;
 					yfrac = (y_start >> 5) & 0x1f;
 					prevy = y_start >> 10;
 
@@ -1391,10 +1385,13 @@ int rdp_update()
 
 						xfrac = (x_start >> 5) & 0x1f;
 
+						notlasthor = i < (hres - 1);
+						notlastvert = j < (vres - 1);
+
 						divot_bounds = (line_x > 0 && line_x < (vi_width_low - 1));
-						next_divot_bounds = (next_line_x > 0 && next_line_x < (vi_width_low - 2));
-						scan_divot_bounds = divot_bounds && (j < (vres - 1));
-						scan_next_divot_bounds = next_divot_bounds && (j < (vres - 1));
+						next_divot_bounds = next_line_x < (vi_width_low - 1);
+						scan_divot_bounds = divot_bounds && notlastvert;
+						scan_next_divot_bounds = next_divot_bounds && notlastvert;
 
 						
 						if (line_x > cache_marker)
@@ -1402,17 +1399,17 @@ int rdp_update()
 							vi_fetch_filter_ptr(&viaa_cache[line_x], frame_buffer, cur_x, fsaa, dither_filter, line_x, j, vres);
 							cache_marker = line_x;
 						}
-						if (j < (vres - 1) && line_x > cache_next_marker)
+						if (notlastvert && line_x > cache_next_marker)
 						{
 							vi_fetch_filter_ptr(&viaa_cache_next[line_x], frame_buffer, scan_x, fsaa, dither_filter, line_x, j + 1, vres);
 							cache_next_marker = line_x;
 						}
-						if (i < (hres - 1) && next_line_x > cache_marker)
+						if (notlasthor && next_line_x > cache_marker)
 						{
 							vi_fetch_filter_ptr(&viaa_cache[next_line_x], frame_buffer, next_x, fsaa, dither_filter, next_line_x, j, vres);
 							cache_marker = next_line_x;
 						}
-						if (j < (vres - 1) && i < (hres - 1) && next_line_x > cache_next_marker)
+						if (notlastvert && notlasthor && next_line_x > cache_next_marker)
 						{
 							vi_fetch_filter_ptr(&viaa_cache_next[next_line_x], frame_buffer, next_scan_x, fsaa, dither_filter, next_line_x, j + 1, vres);
 							cache_next_marker = next_line_x;
@@ -1426,8 +1423,6 @@ int rdp_update()
 								vi_fetch_filter_ptr(&viaa_cache[next_line_x], frame_buffer, next_x, fsaa, dither_filter, next_line_x, j, vres);
 								cache_marker = next_line_x;
 							}
-							if (prev_line_x < 0 || next_line_x > 1023)
-								stricterror("rdp_update: caching of antialiased pixels failed %d %d", prev_line_x, next_line_x);
 							divot_filter(&r, &g, &b, &viaa_cache[line_x], &viaa_cache[prev_line_x], &viaa_cache[next_line_x]);
 						}
 						else
@@ -1438,7 +1433,7 @@ int rdp_update()
 						}
 
 						
-						if (lerp_en && j < (vres - 1) && i < (hres - 1) && (xfrac || yfrac))
+						if (lerp_en && notlastvert && notlasthor && (xfrac || yfrac))
 						{
 
 						
@@ -1449,8 +1444,6 @@ int rdp_update()
 								vi_fetch_filter_ptr(&viaa_cache[far_line_x], frame_buffer, far_x, fsaa, dither_filter, far_line_x, j, vres);
 								cache_marker = far_line_x;
 							}
-							if (line_x < 0 || far_line_x > 1023)
-								stricterror("rdp_update: caching of antialiased pixels failed %d %d", line_x, far_line_x);
 							divot_filter(&nextr, &nextg, &nextb, &viaa_cache[next_line_x], &viaa_cache[line_x], &viaa_cache[far_line_x]);
 						}
 						else
@@ -4993,6 +4986,7 @@ void render_spans_2cycle_complete(int start, int end, int tilenum, int flip)
 		scdiff = flip ? (xendsc - xend) : (xend - xendsc);
 		
 		
+
 		
 		
 
@@ -5730,7 +5724,6 @@ static void edgewalker_for_prims(UINT32* ewdata)
 {
 	int j = 0;
 	int xleft = 0, xright = 0, xleft_inc = 0, xright_inc = 0;
-	int xstart = 0, xend = 0;
 	int r = 0, g = 0, b = 0, a = 0, z = 0, s = 0, t = 0, w = 0;
 	int dr = 0, dg = 0, db = 0, da = 0;
 	int drdx = 0, dgdx = 0, dbdx = 0, dadx = 0, dzdx = 0, dsdx = 0, dtdx = 0, dwdx = 0;
@@ -5759,13 +5752,13 @@ static void edgewalker_for_prims(UINT32* ewdata)
 	dxhdy = (INT32)ewdata[5];
 	dxmdy = (INT32)ewdata[7];
 
-	if (yl & 0x2000)  yl |= 0xffffc000;
-	if (ym & 0x2000)  ym |= 0xffffc000;
-	if (yh & 0x2000)  yh |= 0xffffc000;
+	if (yl & 0x2000)  yl |= (~0x3fff);
+	if (ym & 0x2000)  ym |= (~0x3fff);
+	if (yh & 0x2000)  yh |= (~0x3fff);
 	
-	if (xl & 0x20000000)  xl |= 0xc0000000;
-	if (xm & 0x20000000)  xm |= 0xc0000000;
-	if (xh & 0x20000000)  xh |= 0xc0000000;
+	if (xl & 0x20000000)  xl |= (~0x3fffffff);
+	if (xm & 0x20000000)  xm |= (~0x3fffffff);
+	if (xh & 0x20000000)  xh |= (~0x3fffffff);
 
 	
 	r    = (ewdata[8] & 0xffff0000) | ((ewdata[12] >> 16) & 0x0000ffff);
@@ -5939,7 +5932,6 @@ static void edgewalker_for_prims(UINT32* ewdata)
 
 	int spix = 0;
 	int ycur =	yh & ~3;
-	int ylfar = yl | 3;
 	int ldflag = (sign_dxhdy ^ flip) ? 0 : 3;
 	int invaly = 1;
 	int length = 0;
@@ -5955,6 +5947,14 @@ static void edgewalker_for_prims(UINT32* ewdata)
 	else
 		yllimit = (yl & 0xfff) < clip.yl;
 	yllimit = yllimit ? yl : clip.yl;
+
+	int ylfar = yllimit | 3;
+	if ((yl >> 2) > (ylfar >> 2))
+		ylfar += 4;
+	else if ((yllimit >> 2) >= 0 && (yllimit >> 2) < 1023)
+		span[(yllimit >> 2) + 1].validline = 0;
+	
+	
 	if (yh & 0x2000)
 		yhlimit = 0;
 	else if (yh & 0x1000)
@@ -5962,6 +5962,9 @@ static void edgewalker_for_prims(UINT32* ewdata)
 	else
 		yhlimit = (yh >= clip.yh);
 	yhlimit = yhlimit ? yh : clip.yh;
+
+	int yhclose = yhlimit & ~3;
+
 	INT32 clipxlshift = clip.xl << 1;
 	INT32 clipxhshift = clip.xh << 1;
 	int allover = 1, allunder = 1, curover = 0, curunder = 0;
@@ -5981,14 +5984,15 @@ static void edgewalker_for_prims(UINT32* ewdata)
 			xleft = xl & ~1;
 			xleft_inc = (dxldy >> 2) & ~1;
 		}
-		xstart = xleft >> 16;
-		xend = xright >> 16;
-		j = k >> 2;
+		
 		spix = k & 3;
-		invaly = k < yhlimit || k >= yllimit;
-				
-		if (!(k & ~0xfff))
+						
+		if (k >= yhclose)
 		{
+			invaly = k < yhlimit || k >= yllimit;
+			
+			j = k >> 2;
+
 			if (spix == 0)
 			{
 				maxxmx = 0;
@@ -6033,7 +6037,7 @@ static void edgewalker_for_prims(UINT32* ewdata)
 			
 			if (spix == ldflag)
 			{
-				span[j].unscrx = xend;
+				span[j].unscrx = xright >> 16;
 				xfrac = (xright >> 8) & 0xff;
 				ADJUST_ATTR_PRIM();
 			}
@@ -6070,14 +6074,14 @@ static void edgewalker_for_prims(UINT32* ewdata)
 			xleft = xl & ~1;
 			xleft_inc = (dxldy >> 2) & ~1;
 		}
-		xstart = xleft >> 16;
-		xend = xright >> 16;
-		j = k >> 2;
+		
 		spix = k & 3;
-		invaly = k < yhlimit || k >= yllimit;
-				
-		if (!(k & ~0xfff))
+						
+		if (k >= yhclose)
 		{
+			invaly = k < yhlimit || k >= yllimit;
+			j = k >> 2;
+
 			if (spix == 0)
 			{
 				maxxhx = 0;
@@ -6121,7 +6125,7 @@ static void edgewalker_for_prims(UINT32* ewdata)
 
 			if (spix == ldflag)
 			{
-				span[j].unscrx = xend;
+				span[j].unscrx  = xright >> 16;
 				xfrac = (xright >> 8) & 0xff;
 				ADJUST_ATTR_PRIM();
 			}
@@ -6168,7 +6172,7 @@ static void edgewalker_for_prims(UINT32* ewdata)
 static void edgewalker_for_loads(UINT32* lewdata)
 {
 	int j = 0;
-	int xleft = 0, xright = 0, xleft_inc = 0, xright_inc = 0;
+	int xleft = 0, xright = 0;
 	int xstart = 0, xend = 0;
 	int s = 0, t = 0, w = 0;
 	int dsdx = 0, dtdx = 0;
@@ -6226,10 +6230,6 @@ static void edgewalker_for_loads(UINT32* lewdata)
 	
 
 	
-	xleft_inc = 0;
-	xright_inc = 0;
-	
-	
 	
 	xright = xh & ~0x1;
 	xleft = xm & ~0x1;
@@ -6271,24 +6271,21 @@ static void edgewalker_for_loads(UINT32* lewdata)
 	INT32 yhlimit = yh;
 
 	xfrac = 0;
+	xend = xright >> 16;
 
 	
 	for (k = ycur; k <= ylfar; k++)
 	{
 		if (k == ym)
-		{
-		
 			xleft = xl & ~1;
-			xleft_inc = 0;
-		}
-		xstart = xleft >> 16;
-		xend = xright >> 16;
-		j = k >> 2;
+		
 		spix = k & 3;
-		valid_y = !(k < yhlimit || k >= yllimit);
-				
+						
 		if (!(k & ~0xfff))
 		{
+			j = k >> 2;
+			valid_y = !(k < yhlimit || k >= yllimit);
+
 			if (spix == 0)
 			{
 				maxxmx = 0;
@@ -6760,7 +6757,6 @@ static int rdp_dasm(char *buffer)
 
 static void rdp_invalid(UINT32 w1, UINT32 w2)
 {
-	
 }
 
 static void rdp_noop(UINT32 w1, UINT32 w2)
@@ -6986,7 +6982,10 @@ static void rdp_sync_full(UINT32 w1, UINT32 w2)
 	
 	
 
+	
+
 	z64gl_command = 0;
+
 	*gfx.MI_INTR_REG |= DP_INTERRUPT;
 	gfx.CheckInterrupts();
 }
@@ -7409,6 +7408,7 @@ void rdp_process_list(void)
 	
 	
 	
+
 	
 
 	if (dp_end <= dp_current)
@@ -7445,15 +7445,16 @@ void rdp_process_list(void)
 	}
 
 	
+	if ((rdp_cmd_ptr + (length >> 2)) & ~0xffff)
+		fatalerror("rdp_process_list: rdp_cmd_ptr overflow: length 0x%x ptr_onstart 0x%x", length, ptr_onstart);
+
+
+	
 	for (i = 0; i < length; i += 4)
 	{
 		rdp_cmd_data[rdp_cmd_ptr++] = READ_RDP_DATA(dp_current + i);
 		
 		
-		if (rdp_cmd_ptr >= 0x10000)
-		{
-			fatalerror("rdp_process_list: rdp_cmd_ptr overflow 0x%x 0x%x 0x%x",rdp_cmd_ptr, length, ptr_onstart);
-		}
 	}
 
 
@@ -7476,23 +7477,22 @@ void rdp_process_list(void)
 	while (rdp_cmd_cur < rdp_cmd_ptr && !rdp_pipeline_crashed)
 	{
 		cmd = (rdp_cmd_data[rdp_cmd_cur] >> 24) & 0x3f;
+		cmd_length = rdp_command_length[cmd] >> 2;
 
 		
-		if (((rdp_cmd_ptr - rdp_cmd_cur) * 4) < rdp_command_length[cmd])
+		if ((rdp_cmd_ptr - rdp_cmd_cur) < cmd_length)
 		{
 			
 			dp_start = dp_current = dp_end;
 			return;
 		}
-
-
 		
 		if (LOG_RDP_EXECUTION)
 		{
 			char string[4000];
 			if (1)
 			{
-			z64gl_command += (rdp_command_length[cmd] >> 2);
+			z64gl_command += cmd_length;
 			
 			
 			rdp_dasm(string);
@@ -7508,21 +7508,15 @@ void rdp_process_list(void)
 		
 		rdp_command_table[cmd](rdp_cmd_data[rdp_cmd_cur+0], rdp_cmd_data[rdp_cmd_cur+1]);
 		
-		dp_current += rdp_command_length[cmd];
-		
-		rdp_cmd_cur += (rdp_command_length[cmd] >> 2);
-		
-		
+		rdp_cmd_cur += cmd_length;
 	};
 	rdp_cmd_ptr = 0;
 	rdp_cmd_cur = 0;
 	dp_start = dp_current = dp_end;
 	
 	
+	
 }
-
-
-
 
 INLINE int alpha_compare(INT32 comb_alpha)
 {
@@ -7679,51 +7673,45 @@ STRICTINLINE UINT32 leftcvghex(UINT32 x, UINT32 fmask)
 STRICTINLINE void compute_cvg_flip(INT32* majorx, INT32* minorx, INT32* invalyscan, INT32 scanline)
 {
 	INT32 purgestart, purgeend;
-	int writablescanline = !(scanline & ~0x3ff);
 	int i, length, fmask, maskshift, fmaskshifted;
-	INT32 fleft, fright, minorcur, majorcur, minorcurint, majorcurint, samecvg;
+	INT32 fleft, minorcur, majorcur, minorcurint, majorcurint, samecvg;
 	
-	
-	if (writablescanline)
+	purgestart = span[scanline].rx;
+	purgeend = span[scanline].lx;
+	length = purgeend - purgestart;
+	if (length >= 0)
 	{
-		purgestart = CLIP(span[scanline].unscrx, 0, 1023);
-		purgeend = span[scanline].lx;
-		length = purgeend - purgestart;
-		if (length >= 0)
+		memset(&span[scanline].mask[purgestart], 0, (length + 1) << 2);
+		for(i = 0; i < 4; i++)
 		{
-			memset(&span[scanline].mask[purgestart], 0, (length + 1) << 2);
-			for(i = 0; i < 4; i++)
+			if (!invalyscan[i])
 			{
-				if (!invalyscan[i])
+				minorcur = minorx[i];
+				majorcur = majorx[i];
+				minorcurint = minorcur >> 3;
+				majorcurint = majorcur >> 3;
+				fmask = 0xa >> (i & 1);
+				
+				
+				
+				
+				maskshift = (i - 2) & 4;
+
+				fmaskshifted = fmask << maskshift;
+				fleft = majorcurint + 1;
+
+				if (minorcurint != majorcurint)
 				{
-					minorcur = minorx[i];
-					majorcur = majorx[i];
-					minorcurint = minorcur >> 3;
-					majorcurint = majorcur >> 3;
-					fmask = 0xa >> (i & 1);
-
-					
-					
-					
-					
-					maskshift = ((i ^ 3) & 2) << 1;
-					fmaskshifted = fmask << maskshift;
-					fleft = majorcurint + 1;
-					fright = minorcurint - 1;
-
-					if (minorcurint != majorcurint)
-					{
-						span[scanline].mask[minorcurint] |= (rightcvghex(minorcur, fmask) << maskshift);
-						span[scanline].mask[majorcurint] |= (leftcvghex(majorcur, fmask) << maskshift);
-					}
-					else
-					{
-						samecvg = rightcvghex(minorcur, fmask) & leftcvghex(majorcur, fmask);
-						span[scanline].mask[majorcurint] |= (samecvg << maskshift);
-					}
-					for (; fleft <= fright; fleft++)
-						span[scanline].mask[fleft] |= fmaskshifted;
+					span[scanline].mask[minorcurint] |= (rightcvghex(minorcur, fmask) << maskshift);
+					span[scanline].mask[majorcurint] |= (leftcvghex(majorcur, fmask) << maskshift);
 				}
+				else
+				{
+					samecvg = rightcvghex(minorcur, fmask) & leftcvghex(majorcur, fmask);
+					span[scanline].mask[majorcurint] |= (samecvg << maskshift);
+				}
+				for (; fleft < minorcurint; fleft++)
+					span[scanline].mask[fleft] |= fmaskshifted;
 			}
 		}
 	}
@@ -7732,52 +7720,45 @@ STRICTINLINE void compute_cvg_flip(INT32* majorx, INT32* minorx, INT32* invalysc
 STRICTINLINE void compute_cvg_noflip(INT32* majorx, INT32* minorx, INT32* invalyscan, INT32 scanline)
 {
 	INT32 purgestart, purgeend;
-	int writablescanline = !(scanline & ~0x3ff);
 	int i, length, fmask, maskshift, fmaskshifted;
-	INT32 fleft, fright, minorcur, majorcur, minorcurint, majorcurint, samecvg;
+	INT32 fleft, minorcur, majorcur, minorcurint, majorcurint, samecvg;
 	
-	if (writablescanline)
+	purgestart = span[scanline].lx;
+	purgeend = span[scanline].rx;
+	length = purgeend - purgestart;
+
+	if (length >= 0)
 	{
-		purgestart = span[scanline].lx;
-		purgeend = CLIP(span[scanline].unscrx, 0, 1023);
-		length = purgeend - purgestart;
+		memset(&span[scanline].mask[purgestart], 0, (length + 1) << 2);
 
-		if (length >= 0)
+		for(i = 0; i < 4; i++)
 		{
-			memset(&span[scanline].mask[purgestart], 0, (length + 1) << 2);
-
-			for(i = 0; i < 4; i++)
+			if (!invalyscan[i])
 			{
-				if (!invalyscan[i])
-				{
-					minorcur = minorx[i];
-					majorcur = majorx[i];
-					minorcurint = minorcur >> 3;
-					majorcurint = majorcur >> 3;
-					fmask = 0xa >> (i & 1);
-					maskshift = ((i ^ 3) & 2) << 1;
-					fmaskshifted = fmask << maskshift;
-					fleft = minorcurint + 1;
-					fright = majorcurint - 1;
+				minorcur = minorx[i];
+				majorcur = majorx[i];
+				minorcurint = minorcur >> 3;
+				majorcurint = majorcur >> 3;
+				fmask = 0xa >> (i & 1);
+				maskshift = (i - 2) & 4;
+				fmaskshifted = fmask << maskshift;
+				fleft = minorcurint + 1;
 
-					if (minorcurint != majorcurint)
-					{
-						span[scanline].mask[minorcurint] |= (leftcvghex(minorcur, fmask) << maskshift);
-						span[scanline].mask[majorcurint] |= (rightcvghex(majorcur, fmask) << maskshift);
-					}
-					else
-					{
-						samecvg = leftcvghex(minorcur, fmask) & rightcvghex(majorcur, fmask);
-						span[scanline].mask[majorcurint] |= (samecvg << maskshift);
-					}
-					for (; fleft <= fright; fleft++)
-						span[scanline].mask[fleft] |= fmaskshifted;
+				if (minorcurint != majorcurint)
+				{
+					span[scanline].mask[minorcurint] |= (leftcvghex(minorcur, fmask) << maskshift);
+					span[scanline].mask[majorcurint] |= (rightcvghex(majorcur, fmask) << maskshift);
 				}
+				else
+				{
+					samecvg = leftcvghex(minorcur, fmask) & rightcvghex(majorcur, fmask);
+					span[scanline].mask[majorcurint] |= (samecvg << maskshift);
+				}
+				for (; fleft < majorcurint; fleft++)
+					span[scanline].mask[fleft] |= fmaskshifted;
 			}
 		}
 	}
-
-	
 }
 
 int rdp_close()
@@ -10034,9 +10015,10 @@ STRICTINLINE void get_texel1_1cycle(INT32* s1, INT32* t1, INT32 s, INT32 t, INT3
 	}
 	else
 	{
-		nextt = span[scanline + 1].t >> 16;
-		nexts = span[scanline + 1].s >> 16;
-		nextsw = span[scanline + 1].w >> 16;
+		INT32 nextscan = scanline + 1;
+		nextt = span[nextscan].t >> 16;
+		nexts = span[nextscan].s >> 16;
+		nextsw = span[nextscan].w >> 16;
 	}
 
 	tcdiv_ptr(nexts, nextt, nextsw, s1, t1);
