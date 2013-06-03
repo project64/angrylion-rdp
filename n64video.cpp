@@ -1217,7 +1217,10 @@ int rdp_update()
 	UINT32 prescale_ptr = v_start * linecount + h_start + (lowerfield ? pitchindwords : 0);
 	
 
-	int noblt = 0;
+	if (hres <= 0 || vres <= 0 || (!(vitype & 2) && prevwasblank))
+	{
+		return 0;
+	}
 	
 	
 	
@@ -1237,15 +1240,10 @@ int rdp_update()
 	
 	if (!(vitype & 2))
 	{
-		if (!prevwasblank)
-		{
-			memset(tvfadeoutstate, 0, PRESCALE_HEIGHT * sizeof(UINT32));
-			for (i = 0; i < PRESCALE_HEIGHT; i++)
-				memset(&PreScale[i * pitchindwords], 0, PRESCALE_WIDTH * sizeof(INT32)); 
-			prevwasblank = 1;
-		}
-		else
-			noblt = 1;
+		memset(tvfadeoutstate, 0, PRESCALE_HEIGHT * sizeof(UINT32));
+		for (i = 0; i < PRESCALE_HEIGHT; i++)
+			memset(&PreScale[i * pitchindwords], 0, PRESCALE_WIDTH * sizeof(INT32)); 
+		prevwasblank = 1;
 	}
 	else
 	{
@@ -1299,12 +1297,6 @@ int rdp_update()
 			}
 
  	}
-
-	
-	if (hres <= 0 || vres <= 0)
-	{
-		noblt = 1;
-	}
 
 	switch (vitype)
 	{
@@ -1543,9 +1535,6 @@ int rdp_update()
 	if (res != DD_OK)
 		fatalerror("Couldn't unlock an offscreen surface.");
 
-	if (noblt)
-		return 0;
-
 	
 	
 
@@ -1553,9 +1542,11 @@ int rdp_update()
 
 	src.bottom = visiblelines;
 
-	res = IDirectDrawSurface_Blt(lpddsprimary, &dst, lpddsback, &src, DDBLT_WAIT, 0);
+	if (dst.left < dst.right && dst.top < dst.bottom)
+		res = IDirectDrawSurface_Blt(lpddsprimary, &dst, lpddsback, &src, DDBLT_WAIT, 0);
 	if (res != DD_OK && res != DDERR_GENERIC)
 			fatalerror("Scaled blit failed. %x", res);
+	
 
 	
 
