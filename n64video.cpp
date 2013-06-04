@@ -9,8 +9,10 @@ extern GFX_INFO gfx;
 
 #define SIGN16(x)	((INT16)(x))
 #define SIGN8(x)	((INT8)(x))
+
 #define SIGN(x, numb)	(((x) & ((1 << numb) - 1)) | -((x) & (1 << (numb - 1))))
 #define SIGNF(x, numb)	((x) | -((x) & (1 << (numb - 1))))
+
 
 
 
@@ -790,28 +792,40 @@ STRICTINLINE void tcshift_cycle(INT32* S, INT32* T, INT32* maxs, INT32* maxt, UI
 
 
 	INT32 coord = *S;
-	coord = SIGN16(coord);
 	INT32 shifter = tile[num].shift_s;
 
-	if (shifter < 11)
-		coord >>= shifter;
-	else
+	if (shifter >= 11)
+	{
 		coord <<= (16 - shifter);
-	*S = coord = SIGN16(coord);
+		coord = SIGN16(coord);
+	}
+	else
+	{
+		coord = SIGN16(coord);
+		coord >>= shifter;
+	}
+	*S = coord; 
 
 	
 
+	
 	*maxs = ((coord >> 3) >= tile[num].sh);
+	
 
 	coord = *T;
-	coord = SIGN16(coord);
 	shifter = tile[num].shift_t;
 
-	if (shifter < 11)
-		coord >>= shifter;
-	else
+	if (shifter >= 11)
+	{
 		coord <<= (16 - shifter);
-	*T = coord = SIGN16(coord);
+		coord = SIGN16(coord);
+	}
+	else
+	{
+		coord = SIGN16(coord);
+		coord >>= shifter;
+	}
+	*T = coord; 
 	*maxt = ((coord >> 3) >= tile[num].th);
 }	
 
@@ -819,24 +833,34 @@ STRICTINLINE void tcshift_cycle(INT32* S, INT32* T, INT32* maxs, INT32* maxt, UI
 STRICTINLINE void tcshift_copy(INT32* S, INT32* T, UINT32 num)
 {
 	INT32 coord = *S;
-	coord = SIGN16(coord);
 	INT32 shifter = tile[num].shift_s;
 
-	if (shifter < 11)
-		coord >>= shifter;
-	else
+	if (shifter >= 11)
+	{
 		coord <<= (16 - shifter);
-	*S = SIGN16(coord);
+		coord = SIGN16(coord);
+	}
+	else
+	{
+		coord = SIGN16(coord);
+		coord >>= shifter;
+	}
+	*S = coord; 
 
 	coord = *T;
-	coord = SIGN16(coord);
 	shifter = tile[num].shift_t;
 
-	if (shifter < 11)
-		coord >>= shifter;
-	else
+	if (shifter >= 11)
+	{
 		coord <<= (16 - shifter);
-	*T = SIGN16(coord);
+		coord = SIGN16(coord);
+	}
+	else
+	{
+		coord = SIGN16(coord);
+		coord >>= shifter;
+	}
+	*T = coord; 
 	
 }
 
@@ -2392,7 +2416,7 @@ INLINE void fetch_texel(COLOR *color, int s, int t, UINT32 tilenum)
 			color->r = (c >> 8) & 0xff;
 			color->g = c & 0xff;
 			c = tc16[taddr | 0x400];
-			color->b = (c >>  8) & 0xff;
+			color->b = (c >> 8) & 0xff;
 			color->a = c & 0xff;
 		}
 		break;
@@ -2904,7 +2928,7 @@ INLINE void fetch_texel_quadro(COLOR *color0, COLOR *color1, COLOR *color2, COLO
 			taddr3 ^= xort;
 					
 			UINT32 c0, c1, c2, c3;
-					
+
 			taddr0 &= 0x3ff;
 			taddr1 &= 0x3ff;
 			taddr2 &= 0x3ff;
@@ -8159,7 +8183,20 @@ INLINE UINT32 z_compare(UINT32 zcurpixel, UINT32 dzcurpixel, UINT32 sz, UINT16 d
 	UINT32 oz, dzmem, zval;
 	INT32 rawdzmem;
 
-	if (other_modes.z_compare_en)
+	if (!other_modes.z_compare_en)
+	{
+		
+
+		blshifta = CLIP(dzpixenc - 0xf, 0, 4);
+		blshiftb = CLIP(0xf - dzpixenc, 0, 4);
+
+		int overflow = (curpixel_memcvg + curpixel_cvg) & 8;
+		blend_en = other_modes.force_blend || (!overflow && other_modes.antialias_en);
+		prewrap = overflow;
+
+		return 1;
+	}
+	else
 	{
 		zval = RREADIDX16(zcurpixel);
 		oz = z_decompress(zval);		
@@ -8252,19 +8289,6 @@ INLINE UINT32 z_compare(UINT32 zcurpixel, UINT32 dzcurpixel, UINT32 sz, UINT16 d
 			break;
 		}
 		return 0;
-	}
-	else
-	{
-		
-
-		blshifta = CLIP(dzpixenc - 0xf, 0, 4);
-		blshiftb = CLIP(0xf - dzpixenc, 0, 4);
-
-		int overflow = (curpixel_memcvg + curpixel_cvg) & 8;
-		blend_en = other_modes.force_blend || (!overflow && other_modes.antialias_en);
-		prewrap = overflow;
-
-		return 1;
 	}
 }
 
@@ -9952,6 +9976,7 @@ STRICTINLINE void get_nexttexel0_2cycle(INT32* s1, INT32* t1, INT32 s, INT32 t, 
 
 STRICTINLINE void tclod_4x17_to_15(INT32 scurr, INT32 snext, INT32 tcurr, INT32 tnext, INT32 previous, INT32* lod)
 {
+
 
 
 	int dels = SIGN(snext, 17) - SIGN(scurr, 17);
