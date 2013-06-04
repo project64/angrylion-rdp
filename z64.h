@@ -8,11 +8,11 @@
 #include <stdio.h>
 
 #ifdef WIN32
-#include <windows.h>//Zilmar's spec uses a lot of definitions from here
+#include <windows.h>
 #include <ddraw.h>
 #endif
 
-#if defined (_MSC_VER) && (_MSC_VER >= 1300)//макро MS Visual C++, 1300 для VS .NET 2002
+#if defined (_MSC_VER) && (_MSC_VER >= 1300)
 #include <basetsd.h>
 #endif
 
@@ -22,7 +22,7 @@ typedef signed short INT16;
 typedef unsigned short UINT16;
 #endif
 
-#if !defined (_MSC_VER) || (_MSC_VER >= 1600)//stdint.h появился в VC++ 2010
+#if !defined (_MSC_VER) || (_MSC_VER >= 1600)
 #include <stdint.h>
 typedef uint64_t UINT64;
 typedef int64_t INT64;
@@ -72,11 +72,11 @@ typedef int8_t INT8;
 #define R4300i_SP_Intr 1
 
 
-#define LSB_FIRST 1 // TODO : check for platform
+#define LSB_FIRST 1 
 #ifdef LSB_FIRST
 	#define BYTE_ADDR_XOR		3
 	#define WORD_ADDR_XOR		1
-	#define BYTE4_XOR_BE(a) 	((a) ^ 3)				/* read/write a byte to a 32-bit space */
+	#define BYTE4_XOR_BE(a) 	((a) ^ 3)				
 #else
 	#define BYTE_ADDR_XOR		0
 	#define WORD_ADDR_XOR		0
@@ -90,12 +90,13 @@ typedef int8_t INT8;
 #define BYTE_XOR_DWORD_SWAP 4
 #define WORD_XOR_DWORD_SWAP 2
 #endif
-#define DWORD_XOR_DWORD_SWAP 1//не зависит от endianness хоста, т.к. мы ксорим память по 32-битн. границе
+#define DWORD_XOR_DWORD_SWAP 1
 
-//#define INLINE __forceinline//compilation takes too long
 #define INLINE
 #ifdef _MSC_VER
-#define STRICTINLINE __forceinline//MSVC-specific, при профилировании и отладке отменить!
+#define STRICTINLINE	__forceinline
+#else
+#define STRICTINLINE	inline
 #endif
 
 #define PRESCALE_WIDTH 640
