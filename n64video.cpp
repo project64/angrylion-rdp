@@ -822,6 +822,7 @@ STRICTINLINE void tcshift_cycle(INT32* S, INT32* T, INT32* maxs, INT32* maxt, UI
 	
 	*maxs = ((coord >> 3) >= tile[num].sh);
 	
+	
 
 	coord = *T;
 	shifter = tile[num].shift_t;
@@ -876,92 +877,50 @@ STRICTINLINE void tcshift_copy(INT32* S, INT32* T, UINT32 num)
 }
 
 
-STRICTINLINE void tcclamp_generic(INT32* S, INT32* T, INT32* SFRAC, INT32* TFRAC, INT32 maxs, INT32 maxt, INT32 num)
+STRICTINLINE void tcclamp_cycle(INT32* S, INT32* T, INT32* SFRAC, INT32* TFRAC, INT32 maxs, INT32 maxt, INT32 num)
 {
-	int notcopy = (other_modes.cycle_type != CYCLE_TYPE_COPY);
-	int dos = tile[num].f.clampens && notcopy;
-	int dot = tile[num].f.clampent && notcopy;
-	if (dos)
+
+	if (tile[num].f.clampens)
 	{
 		if (*S & 0x10000)
 		{
 			*S = 0;
 			*SFRAC = 0;
 		}
-		else if (maxs)
-		{
-			*S = tile[num].f.clampdiffs;
-			*SFRAC = 0;
-		}
 		else
-			*S = (SIGN(*S, 17) >> 5) & 0x1fff;
+		{
+			if (maxs)
+			{
+				*S = tile[num].f.clampdiffs;
+				*SFRAC = 0;
+			}
+			else
+				*S = (*S >> 5);
+		}
 	}
 	else
-		*S = (SIGN(*S, 17) >> 5) & 0x1fff;
+		*S = (*S >> 5);
 
-	if (dot)
+	if (tile[num].f.clampent)
 	{
 		if (*T & 0x10000)
 		{
 			*T = 0;
 			*TFRAC = 0;
 		}
-		else if (maxt)
-		{
-			*T = tile[num].f.clampdifft;
-			*TFRAC = 0;
-		}
-		else
-			*T = (SIGN(*T, 17) >> 5) & 0x1fff;
-	}
-	else
-		*T = (SIGN(*T, 17) >> 5) & 0x1fff;
-}
-
-
-STRICTINLINE void tcclamp_cycle(INT32* S, INT32* T, INT32* SFRAC, INT32* TFRAC, INT32 maxs, INT32 maxt, INT32 num)
-{
-	if (tile[num].f.clampens)
-	{
-		if (!(*S & 0x10000))
-		{
-			if (!maxs)
-				*S = (SIGN(*S, 17) >> 5) & 0x1fff;
-			else
-			{
-				*S = tile[num].f.clampdiffs;
-				*SFRAC = 0;
-			}
-		}
 		else
 		{
-			*S = 0;
-			*SFRAC = 0;
-		}
-	}
-	else
-		*S = (SIGN(*S, 17) >> 5) & 0x1fff;
-
-	if (tile[num].f.clampent)
-	{
-		if (!(*T & 0x10000))
-		{
-			if (!maxt)
-				*T = (SIGN(*T, 17) >> 5) & 0x1fff;
-			else
+			if (maxt)
 			{
 				*T = tile[num].f.clampdifft;
 				*TFRAC = 0;
 			}
-		}
-		else
-		{
-			*T = 0;
-			*TFRAC = 0;
+			else
+				*T = (*T >> 5);
 		}
 	}
 	else
-		*T = (SIGN(*T, 17) >> 5) & 0x1fff;
+		*T = (*T >> 5);
 }
 
 
@@ -969,33 +928,33 @@ STRICTINLINE void tcclamp_cycle_light(INT32* S, INT32* T, INT32 maxs, INT32 maxt
 {
 	if (tile[num].f.clampens)
 	{
-		if (!(*S & 0x10000))
-		{
-			if (!maxs)
-				*S = (SIGN(*S, 17) >> 5) & 0x1fff;
-			else
-				*S = tile[num].f.clampdiffs;
-		}
-		else
+		if (*S & 0x10000)
 			*S = 0;
+		else
+		{
+			if (maxs)
+				*S = tile[num].f.clampdiffs;
+			else
+				*S = (*S >> 5);
+		}
 	}
 	else
-		*S = (SIGN(*S, 17) >> 5) & 0x1fff;
+		*S = (*S >> 5);
 
 	if (tile[num].f.clampent)
 	{
-		if (!(*T & 0x10000))
-		{
-			if (!maxt)
-				*T = (SIGN(*T, 17) >> 5) & 0x1fff;
-			else
-				*T = tile[num].f.clampdifft;
-		}
-		else
+		if (*T & 0x10000)
 			*T = 0;
+		else
+		{
+			if (maxt)
+				*T = tile[num].f.clampdifft;
+			else
+				*T = (*T >> 5);
+		}
 	}
 	else
-		*T = (SIGN(*T, 17) >> 5) & 0x1fff;
+		*T = (*T >> 5);
 }
 
 
@@ -2351,7 +2310,9 @@ INLINE int blender_2cycle(UINT32* fr, UINT32* fg, UINT32* fb, int dith)
 
 INLINE void fetch_texel(COLOR *color, int s, int t, UINT32 tilenum)
 {
-	UINT32 tbase = ((tile[tilenum].line * t) & 0x1ff) + tile[tilenum].tmem;
+	UINT32 tbase = tile[tilenum].line * t + tile[tilenum].tmem;
+	
+
 	UINT32 tpal	= tile[tilenum].palette;
 
 	
@@ -2679,7 +2640,7 @@ INLINE void fetch_texel(COLOR *color, int s, int t, UINT32 tilenum)
 
 INLINE void fetch_texel_entlut(COLOR *color, int s, int t, UINT32 tilenum)
 {
-	UINT32 tbase = ((tile[tilenum].line * t) & 0x1ff) + tile[tilenum].tmem;
+	UINT32 tbase = tile[tilenum].line * t + tile[tilenum].tmem;
 	UINT32 tpal	= tile[tilenum].palette;
 	UINT16 *tc16 = (UINT16*)TMEM;
 	UINT32 taddr = 0;
@@ -2781,8 +2742,8 @@ INLINE void fetch_texel_entlut(COLOR *color, int s, int t, UINT32 tilenum)
 INLINE void fetch_texel_quadro(COLOR *color0, COLOR *color1, COLOR *color2, COLOR *color3, int s0, int s1, int t0, int t1, UINT32 tilenum)
 {
 
-	UINT32 tbase0 = ((tile[tilenum].line * t0) & 0x1ff) + tile[tilenum].tmem;
-	UINT32 tbase2 = ((tile[tilenum].line * t1) & 0x1ff) + tile[tilenum].tmem;
+	UINT32 tbase0 = tile[tilenum].line * t0 + tile[tilenum].tmem;
+	UINT32 tbase2 = tile[tilenum].line * t1 + tile[tilenum].tmem;
 	UINT32 tpal	= tile[tilenum].palette;
 	UINT32 xort = 0, ands = 0;
 
@@ -3653,8 +3614,8 @@ INLINE void fetch_texel_quadro(COLOR *color0, COLOR *color1, COLOR *color2, COLO
 
 INLINE void fetch_texel_entlut_quadro(COLOR *color0, COLOR *color1, COLOR *color2, COLOR *color3, int s0, int s1, int t0, int t1, UINT32 tilenum)
 {
-	UINT32 tbase0 = ((tile[tilenum].line * t0) & 0x1ff) + tile[tilenum].tmem;
-	UINT32 tbase2 = ((tile[tilenum].line * t1) & 0x1ff) + tile[tilenum].tmem;
+	UINT32 tbase0 = tile[tilenum].line * t0 + tile[tilenum].tmem;
+	UINT32 tbase2 = tile[tilenum].line * t1 + tile[tilenum].tmem;
 	UINT32 tpal	= tile[tilenum].palette;
 	UINT32 xort = 0, ands = 0;
 
@@ -4251,6 +4212,11 @@ void fetch_qword_copy(UINT32* hidword, UINT32* lowdword, INT32 ssss, INT32 ssst,
 STRICTINLINE void texture_pipeline_cycle(COLOR* TEX, COLOR* prev, INT32 SSS, INT32 SST, UINT32 tilenum, UINT32 cycle)											
 {
 #define TRELATIVE(x, y) 	((x) - ((y) << 3));
+#define UPPER ((sfrac + tfrac) & 0x20)
+
+
+
+
 	INT32 maxs, maxt, invt0r, invt0g, invt0b, invt0a;
 	INT32 sfrac, tfrac, invsf, invtf;
 	int upper = 0;
@@ -4263,151 +4229,13 @@ STRICTINLINE void texture_pipeline_cycle(COLOR* TEX, COLOR* prev, INT32 SSS, INT
 	sss1 = SSS;
 	sst1 = SST;
 
-	if (other_modes.sample_type)
-	{
-		tcshift_cycle(&sss1, &sst1, &maxs, &maxt, tilenum);
+	tcshift_cycle(&sss1, &sst1, &maxs, &maxt, tilenum);
 
-		sss1 = TRELATIVE(sss1, tile[tilenum].sl);
-		sst1 = TRELATIVE(sst1, tile[tilenum].tl);
+	sss1 = TRELATIVE(sss1, tile[tilenum].sl);
+	sst1 = TRELATIVE(sst1, tile[tilenum].tl);
 
-		sfrac = sss1 & 0x1f;
-		tfrac = sst1 & 0x1f;
-
-		tcclamp_cycle(&sss1, &sst1, &sfrac, &tfrac, maxs, maxt, tilenum);
-		
-
-		if (tile[tilenum].format != FORMAT_YUV)
-			sss2 = sss1 + 1;
-		else
-			sss2 = sss1 + 2;
-		
-		
-
-		sst2 = sst1 + 1;
-
-		
-		tcmask_coupled(&sss1, &sss2, &sst1, &sst2, tilenum);
-
-		upper = ((sfrac + tfrac) >= 0x20) ;
-		
-		
-		
-
-		
-		sfrac <<= 3;
-		tfrac <<= 3;
-		
-		
-
-		
-		if (bilerp)
-		{
-			
-			if (!other_modes.en_tlut)
-				fetch_texel_quadro(&t0, &t1, &t2, &t3, sss1, sss2, sst1, sst2, tilenum);
-			else
-				fetch_texel_entlut_quadro(&t0, &t1, &t2, &t3, sss1, sss2, sst1, sst2, tilenum);
-
-			if (!other_modes.mid_texel || sfrac != 0x80 || tfrac != 0x80)
-			{
-				if (!convert)
-				{
-					if (upper)
-					{
-						
-						invsf = 0x100 - sfrac;
-						invtf = 0x100 - tfrac;
-						TEX->r = t3.r + ((((invsf * (t2.r - t3.r)) + (invtf * (t1.r - t3.r))) + 0x80) >> 8);	
-						TEX->g = t3.g + ((((invsf * (t2.g - t3.g)) + (invtf * (t1.g - t3.g))) + 0x80) >> 8);																		
-						TEX->b = t3.b + ((((invsf * (t2.b - t3.b)) + (invtf * (t1.b - t3.b))) + 0x80) >> 8);																
-						TEX->a = t3.a + ((((invsf * (t2.a - t3.a)) + (invtf * (t1.a - t3.a))) + 0x80) >> 8);
-					}
-					else
-					{
-						TEX->r = t0.r + ((((sfrac * (t1.r - t0.r)) + (tfrac * (t2.r - t0.r))) + 0x80) >> 8);											
-						TEX->g = t0.g + ((((sfrac * (t1.g - t0.g)) + (tfrac * (t2.g - t0.g))) + 0x80) >> 8);											
-						TEX->b = t0.b + ((((sfrac * (t1.b - t0.b)) + (tfrac * (t2.b - t0.b))) + 0x80) >> 8);									
-						TEX->a = t0.a + ((((sfrac * (t1.a - t0.a)) + (tfrac * (t2.a - t0.a))) + 0x80) >> 8);
-					}
-				}
-				else
-				{
-					if (upper)
-					{
-						TEX->r = prev->b + ((((prev->r * (t2.r - t3.r)) + (prev->g * (t1.r - t3.r))) + 0x80) >> 8);	
-						TEX->g = prev->b + ((((prev->r * (t2.g - t3.g)) + (prev->g * (t1.g - t3.g))) + 0x80) >> 8);																		
-						TEX->b = prev->b + ((((prev->r * (t2.b - t3.b)) + (prev->g * (t1.b - t3.b))) + 0x80) >> 8);																
-						TEX->a = prev->b + ((((prev->r * (t2.a - t3.a)) + (prev->g * (t1.a - t3.a))) + 0x80) >> 8);
-					}
-					else
-					{
-						TEX->r = prev->b + ((((prev->r * (t1.r - t0.r)) + (prev->g * (t2.r - t0.r))) + 0x80) >> 8);											
-						TEX->g = prev->b + ((((prev->r * (t1.g - t0.g)) + (prev->g * (t2.g - t0.g))) + 0x80) >> 8);											
-						TEX->b = prev->b + ((((prev->r * (t1.b - t0.b)) + (prev->g * (t2.b - t0.b))) + 0x80) >> 8);									
-						TEX->a = prev->b + ((((prev->r * (t1.a - t0.a)) + (prev->g * (t2.a - t0.a))) + 0x80) >> 8);
-					}	
-				}
-			}
-			else
-			{
-				invt0r  = ~t0.r; invt0g = ~t0.g; invt0b = ~t0.b; invt0a = ~t0.a;
-				if (convert)
-				{
-					TEX->r = prev->b + ((((prev->r * (t1.r - t0.r)) + (prev->g * (t2.r - t0.r))) + ((invt0r + t3.r) << 6) + 0xc0) >> 8);											
-					TEX->g = prev->b + ((((prev->r * (t1.g - t0.g)) + (prev->g * (t2.g - t0.g))) + ((invt0g + t3.g) << 6) + 0xc0) >> 8);											
-					TEX->b = prev->b + ((((prev->r * (t1.b - t0.b)) + (prev->g * (t2.b - t0.b))) + ((invt0b + t3.b) << 6) + 0xc0) >> 8);									
-					TEX->a = prev->b + ((((prev->r * (t1.a - t0.a)) + (prev->g * (t2.a - t0.a))) + ((invt0a + t3.a) << 6) + 0xc0) >> 8);
-				}
-				else
-				{
-					sfrac >>= 1;
-					tfrac >>= 1;
-					TEX->r = t0.r + ((((sfrac * (t1.r - t0.r)) + (tfrac * (t2.r - t0.r))) + ((invt0r + t3.r) << 6) + 0xc0) >> 8);											
-					TEX->g = t0.g + ((((sfrac * (t1.g - t0.g)) + (tfrac * (t2.g - t0.g))) + ((invt0g + t3.g) << 6) + 0xc0) >> 8);											
-					TEX->b = t0.b + ((((sfrac * (t1.b - t0.b)) + (tfrac * (t2.b - t0.b))) + ((invt0b + t3.b) << 6) + 0xc0) >> 8);									
-					TEX->a = t0.a + ((((sfrac * (t1.a - t0.a)) + (tfrac * (t2.a - t0.a))) + ((invt0a + t3.a) << 6) + 0xc0) >> 8);
-				}
-			}
-		}
-		else
-		{
-			newk0 = SIGN(k0, 9); 
-			newk1 = SIGN(k1, 9); 
-			newk2 = SIGN(k2, 9); 
-			newk3 = SIGN(k3, 9);
-			invk0 = ~newk0; 
-			invk1 =~newk1; 
-			invk2 = ~newk2; 
-			invk3 = ~newk3;
-			if (!other_modes.en_tlut)
-				fetch_texel(&t0, sss1, sst1, tilenum);
-			else
-				fetch_texel_entlut(&t0, sss1, sst1, tilenum);
-			if (convert)
-				t0 = *prev;
-			t0.r = SIGN(t0.r, 9);
-			t0.g = SIGN(t0.g, 9); 
-			t0.b = SIGN(t0.b, 9);
-			TEX->r = t0.b + ((((newk0 - invk0) * t0.g) + 0x80) >> 8);
-			TEX->g = t0.b + ((((newk1 - invk1) * t0.r + (newk2 - invk2) * t0.g) + 0x80) >> 8);
-			TEX->b = t0.b + ((((newk3 - invk3) * t0.r) + 0x80) >> 8);
-			TEX->a = t0.b;
-		}
-
-		TEX->r &= 0x1ff;
-		TEX->g &= 0x1ff;
-		TEX->b &= 0x1ff;
-		TEX->a &= 0x1ff;
-		
-		
-	}
-	else
+	if (!other_modes.sample_type)
 	{																										
-		tcshift_cycle(&sss1, &sst1, &maxs, &maxt, tilenum);
-
-		sss1 = TRELATIVE(sss1, tile[tilenum].sl);
-		sst1 = TRELATIVE(sst1, tile[tilenum].tl);
-				
 		
 		
 		
@@ -4417,19 +4245,12 @@ STRICTINLINE void texture_pipeline_cycle(COLOR* TEX, COLOR* prev, INT32 SSS, INT
         tcmask(&sss1, &sst1, tilenum);	
 																										
 			
-		if (!other_modes.en_tlut)
-			fetch_texel(&t0, sss1, sst1, tilenum);
-		else
+		if (other_modes.en_tlut)
 			fetch_texel_entlut(&t0, sss1, sst1, tilenum);
-
-		if (bilerp)
-		{
-			if (!convert)
-				*TEX = t0;
-			else
-				TEX->r = TEX->g = TEX->b = TEX->a = prev->b;
-		}
 		else
+			fetch_texel(&t0, sss1, sst1, tilenum);
+		
+		if (!bilerp)
 		{
 			newk0 = SIGN(k0, 9); 
 			newk1 = SIGN(k1, 9); 
@@ -4453,7 +4274,148 @@ STRICTINLINE void texture_pipeline_cycle(COLOR* TEX, COLOR* prev, INT32 SSS, INT
 			TEX->b &= 0x1ff;
 			TEX->a &= 0x1ff;
 		}
-	}																									
+		else
+		{
+			if (convert)
+				TEX->r = TEX->g = TEX->b = TEX->a = prev->b;
+			else
+				*TEX = t0;
+		}
+	}	
+	else
+	{	
+		sfrac = sss1 & 0x1f;
+		tfrac = sst1 & 0x1f;
+
+		tcclamp_cycle(&sss1, &sst1, &sfrac, &tfrac, maxs, maxt, tilenum);
+		
+	
+		if (tile[tilenum].format == FORMAT_YUV)
+			sss2 = sss1 + 2;
+		else
+			sss2 = sss1 + 1;
+		
+		
+		
+
+		sst2 = sst1 + 1;
+		
+
+		
+		tcmask_coupled(&sss1, &sss2, &sst1, &sst2, tilenum);
+		
+		
+
+		
+		
+		
+		
+
+		
+		if (!bilerp)
+		{
+			newk0 = SIGN(k0, 9); 
+			newk1 = SIGN(k1, 9); 
+			newk2 = SIGN(k2, 9); 
+			newk3 = SIGN(k3, 9);
+			invk0 = ~newk0; 
+			invk1 =~newk1; 
+			invk2 = ~newk2; 
+			invk3 = ~newk3;
+			if (!other_modes.en_tlut)
+				fetch_texel(&t0, sss1, sst1, tilenum);
+			else
+				fetch_texel_entlut(&t0, sss1, sst1, tilenum);
+			if (convert)
+				t0 = *prev;
+			t0.r = SIGN(t0.r, 9);
+			t0.g = SIGN(t0.g, 9); 
+			t0.b = SIGN(t0.b, 9);
+			TEX->r = t0.b + ((((newk0 - invk0) * t0.g) + 0x80) >> 8);
+			TEX->g = t0.b + ((((newk1 - invk1) * t0.r + (newk2 - invk2) * t0.g) + 0x80) >> 8);
+			TEX->b = t0.b + ((((newk3 - invk3) * t0.r) + 0x80) >> 8);
+			TEX->a = t0.b;
+		}
+		else
+		{
+			
+			if (other_modes.en_tlut)
+				fetch_texel_entlut_quadro(&t0, &t1, &t2, &t3, sss1, sss2, sst1, sst2, tilenum);
+			else
+				fetch_texel_quadro(&t0, &t1, &t2, &t3, sss1, sss2, sst1, sst2, tilenum);
+
+			if (other_modes.mid_texel && sfrac == 0x10 && tfrac == 0x10)
+			{
+				invt0r  = ~t0.r; invt0g = ~t0.g; invt0b = ~t0.b; invt0a = ~t0.a;
+				if (convert)
+				{
+					TEX->r = prev->b + ((((prev->r * (t1.r - t0.r)) + (prev->g * (t2.r - t0.r))) + ((invt0r + t3.r) << 6) + 0xc0) >> 8);											
+					TEX->g = prev->b + ((((prev->r * (t1.g - t0.g)) + (prev->g * (t2.g - t0.g))) + ((invt0g + t3.g) << 6) + 0xc0) >> 8);											
+					TEX->b = prev->b + ((((prev->r * (t1.b - t0.b)) + (prev->g * (t2.b - t0.b))) + ((invt0b + t3.b) << 6) + 0xc0) >> 8);									
+					TEX->a = prev->b + ((((prev->r * (t1.a - t0.a)) + (prev->g * (t2.a - t0.a))) + ((invt0a + t3.a) << 6) + 0xc0) >> 8);
+				}
+				else
+				{
+					sfrac <<= 2;
+					tfrac <<= 2;
+					TEX->r = t0.r + ((((sfrac * (t1.r - t0.r)) + (tfrac * (t2.r - t0.r))) + ((invt0r + t3.r) << 6) + 0xc0) >> 8);											
+					TEX->g = t0.g + ((((sfrac * (t1.g - t0.g)) + (tfrac * (t2.g - t0.g))) + ((invt0g + t3.g) << 6) + 0xc0) >> 8);											
+					TEX->b = t0.b + ((((sfrac * (t1.b - t0.b)) + (tfrac * (t2.b - t0.b))) + ((invt0b + t3.b) << 6) + 0xc0) >> 8);									
+					TEX->a = t0.a + ((((sfrac * (t1.a - t0.a)) + (tfrac * (t2.a - t0.a))) + ((invt0a + t3.a) << 6) + 0xc0) >> 8);
+				}
+			}
+			else
+			{
+				if (convert)
+				{
+					if (UPPER)
+					{
+						TEX->r = prev->b + ((((prev->r * (t2.r - t3.r)) + (prev->g * (t1.r - t3.r))) + 0x80) >> 8);	
+						TEX->g = prev->b + ((((prev->r * (t2.g - t3.g)) + (prev->g * (t1.g - t3.g))) + 0x80) >> 8);																		
+						TEX->b = prev->b + ((((prev->r * (t2.b - t3.b)) + (prev->g * (t1.b - t3.b))) + 0x80) >> 8);																
+						TEX->a = prev->b + ((((prev->r * (t2.a - t3.a)) + (prev->g * (t1.a - t3.a))) + 0x80) >> 8);
+					}
+					else
+					{
+						TEX->r = prev->b + ((((prev->r * (t1.r - t0.r)) + (prev->g * (t2.r - t0.r))) + 0x80) >> 8);											
+						TEX->g = prev->b + ((((prev->r * (t1.g - t0.g)) + (prev->g * (t2.g - t0.g))) + 0x80) >> 8);											
+						TEX->b = prev->b + ((((prev->r * (t1.b - t0.b)) + (prev->g * (t2.b - t0.b))) + 0x80) >> 8);									
+						TEX->a = prev->b + ((((prev->r * (t1.a - t0.a)) + (prev->g * (t2.a - t0.a))) + 0x80) >> 8);
+					}	
+				}
+				else
+				{
+					if (UPPER)
+					{
+						
+						invsf = 0x20 - sfrac;
+						invtf = 0x20 - tfrac;
+						TEX->r = t3.r + ((((invsf * (t2.r - t3.r)) + (invtf * (t1.r - t3.r))) + 0x10) >> 5);	
+						TEX->g = t3.g + ((((invsf * (t2.g - t3.g)) + (invtf * (t1.g - t3.g))) + 0x10) >> 5);																		
+						TEX->b = t3.b + ((((invsf * (t2.b - t3.b)) + (invtf * (t1.b - t3.b))) + 0x10) >> 5);																
+						TEX->a = t3.a + ((((invsf * (t2.a - t3.a)) + (invtf * (t1.a - t3.a))) + 0x10) >> 5);
+					}
+					else
+					{
+						TEX->r = t0.r + ((((sfrac * (t1.r - t0.r)) + (tfrac * (t2.r - t0.r))) + 0x10) >> 5);											
+						TEX->g = t0.g + ((((sfrac * (t1.g - t0.g)) + (tfrac * (t2.g - t0.g))) + 0x10) >> 5);											
+						TEX->b = t0.b + ((((sfrac * (t1.b - t0.b)) + (tfrac * (t2.b - t0.b))) + 0x10) >> 5);									
+						TEX->a = t0.a + ((((sfrac * (t1.a - t0.a)) + (tfrac * (t2.a - t0.a))) + 0x10) >> 5);
+					}
+				}
+				
+			}
+			
+		}
+		
+		TEX->r &= 0x1ff;
+		TEX->g &= 0x1ff;
+		TEX->b &= 0x1ff;
+		TEX->a &= 0x1ff;
+		
+		
+	}
+																									
 }
 
 
@@ -4462,10 +4424,13 @@ STRICTINLINE void tc_pipeline_copy(INT32* sss0, INT32* sss1, INT32* sss2, INT32*
 	int ss0 = *sss0, ss1 = 0, ss2 = 0, ss3 = 0, st = *sst;
 
 	tcshift_copy(&ss0, &st, tilenum);
+	
+	
+
 	ss0 = TRELATIVE(ss0, tile[tilenum].sl);
 	st = TRELATIVE(st, tile[tilenum].tl);
-	ss0 = (SIGN(ss0, 17) >> 5) & 0x1fff;
-	st = (SIGN(st, 17) >> 5) & 0x1fff;
+	ss0 = (ss0 >> 5);
+	st = (st >> 5);
 
 	ss1 = ss0 + 1;
 	ss2 = ss0 + 2;
@@ -4494,13 +4459,13 @@ STRICTINLINE void tc_pipeline_load(INT32* sss, INT32* sst, int tilenum, int coor
 	
 	if (coord_quad)
 	{
-		sss1 = (sss1 >> 3) & 0xfff;
-		sst1 = (sst1 >> 3) & 0xfff;
+		sss1 = (sss1 >> 3);
+		sst1 = (sst1 >> 3);
 	}
 	else
 	{
-		sss1 = (SIGN(sss1, 17) >> 5) & 0x1fff;
-		sst1 = (SIGN(sst1, 17) >> 5) & 0x1fff;
+		sss1 = (sss1 >> 5);
+		sst1 = (sst1 >> 5);
 	}
 	
 	*sss = sss1;
@@ -9245,8 +9210,8 @@ STRICTINLINE void video_max_optimized(UINT32* Pixels, UINT32* pen)
 
 INLINE void calculate_clamp_diffs(UINT32 i)
 {
-	tile[i].f.clampdiffs = (tile[i].sh >> 2) - (tile[i].sl >> 2);
-	tile[i].f.clampdifft = (tile[i].th >> 2) - (tile[i].tl >> 2);
+	tile[i].f.clampdiffs = ((tile[i].sh >> 2) - (tile[i].sl >> 2)) & 0x3ff;
+	tile[i].f.clampdifft = ((tile[i].th >> 2) - (tile[i].tl >> 2)) & 0x3ff;
 }
 
 
