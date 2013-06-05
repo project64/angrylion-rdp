@@ -1752,17 +1752,7 @@ STRICTINLINE void combiner_1cycle(int adseed)
 	if (pixel_color.a == 0xff)
 		pixel_color.a = 0x100;
 	
-	if (!other_modes.key_en)
-	{
-		
-		combined_color.r >>= 8;
-		combined_color.g >>= 8;
-		combined_color.b >>= 8;
-		pixel_color.r = special_9bit_clamptable[combined_color.r];
-		pixel_color.g = special_9bit_clamptable[combined_color.g];
-		pixel_color.b = special_9bit_clamptable[combined_color.b];
-	}
-	else
+	if (other_modes.key_en)
 	{
 		redkey = SIGN(combined_color.r, 17);
 		if (redkey >= 0)
@@ -1793,6 +1783,16 @@ STRICTINLINE void combiner_1cycle(int adseed)
 		combined_color.g >>= 8;
 		combined_color.b >>= 8;
 	}
+	else
+	{
+		
+		combined_color.r >>= 8;
+		combined_color.g >>= 8;
+		combined_color.b >>= 8;
+		pixel_color.r = special_9bit_clamptable[combined_color.r];
+		pixel_color.g = special_9bit_clamptable[combined_color.g];
+		pixel_color.b = special_9bit_clamptable[combined_color.b];
+	}
 
 	
 	if (other_modes.cvg_times_alpha)
@@ -1801,18 +1801,7 @@ STRICTINLINE void combiner_1cycle(int adseed)
 		curpixel_cvg = (temp >> 5) & 0xf;
 	}
 
-	if (!other_modes.alpha_cvg_select)
-	{
-		if (!other_modes.key_en)
-		{
-			pixel_color.a += adseed;
-			if (pixel_color.a & 0x100)
-				pixel_color.a = 0xff;
-		}
-		else
-			pixel_color.a = keyalpha;
-	}
-	else
+	if (other_modes.alpha_cvg_select)
 	{
 		if (other_modes.cvg_times_alpha)
 			pixel_color.a = temp;
@@ -1820,6 +1809,17 @@ STRICTINLINE void combiner_1cycle(int adseed)
 			pixel_color.a = curpixel_cvg << 5;
 		if (pixel_color.a > 0xff)
 			pixel_color.a = 0xff;
+	}
+	else
+	{
+		if (other_modes.key_en)
+			pixel_color.a = keyalpha;
+		else
+		{
+			pixel_color.a += adseed;
+			if (pixel_color.a & 0x100)
+				pixel_color.a = 0xff;
+		}
 	}
 
 	shade_color.a += adseed;
@@ -1861,19 +1861,7 @@ STRICTINLINE void combiner_2cycle(int adseed)
 	combined_color.b = color_combiner_equation(*combiner_rgbsub_a_b[1],*combiner_rgbsub_b_b[1],*combiner_rgbmul_b[1],*combiner_rgbadd_b[1]);
 	combined_color.a = alpha_combiner_equation(*combiner_alphasub_a[1],*combiner_alphasub_b[1],*combiner_alphamul[1],*combiner_alphaadd[1]);
 
-		
-	if (!other_modes.key_en)
-	{
-		
-		combined_color.r >>= 8;
-		combined_color.g >>= 8;
-		combined_color.b >>= 8;
-
-		pixel_color.r = special_9bit_clamptable[combined_color.r];
-		pixel_color.g = special_9bit_clamptable[combined_color.g];
-		pixel_color.b = special_9bit_clamptable[combined_color.b];
-	}
-	else
+	if (other_modes.key_en)
 	{
 		redkey = SIGN(combined_color.r, 17);
 		if (redkey >= 0)
@@ -1904,6 +1892,17 @@ STRICTINLINE void combiner_2cycle(int adseed)
 		combined_color.g >>= 8;
 		combined_color.b >>= 8;
 	}
+	else
+	{
+		
+		combined_color.r >>= 8;
+		combined_color.g >>= 8;
+		combined_color.b >>= 8;
+
+		pixel_color.r = special_9bit_clamptable[combined_color.r];
+		pixel_color.g = special_9bit_clamptable[combined_color.g];
+		pixel_color.b = special_9bit_clamptable[combined_color.b];
+	}
 
 	pixel_color.a = special_9bit_clamptable[combined_color.a];
 	if (pixel_color.a == 0xff)
@@ -1916,18 +1915,7 @@ STRICTINLINE void combiner_2cycle(int adseed)
 		curpixel_cvg = (temp >> 5) & 0xf;
 	}
 	
-	if (!other_modes.alpha_cvg_select)
-	{
-		if (!other_modes.key_en)
-		{
-			pixel_color.a += adseed;
-			if (pixel_color.a & 0x100)
-				pixel_color.a = 0xff;
-		}
-		else
-			pixel_color.a = keyalpha;
-	}
-	else
+	if (other_modes.alpha_cvg_select)
 	{
 		if (other_modes.cvg_times_alpha)
 			pixel_color.a = temp;
@@ -1935,6 +1923,17 @@ STRICTINLINE void combiner_2cycle(int adseed)
 			pixel_color.a = curpixel_cvg << 5;
 		if (pixel_color.a > 0xff)
 			pixel_color.a = 0xff;
+	}
+	else
+	{
+		if (other_modes.key_en)
+			pixel_color.a = keyalpha;
+		else
+		{
+			pixel_color.a += adseed;
+			if (pixel_color.a & 0x100)
+				pixel_color.a = 0xff;
+		}
 	}
 
 	shade_color.a += adseed;
@@ -6336,7 +6335,8 @@ static void edgewalker_for_prims(INT32* ewdata)
 			allunder &= curunder; 
 			
 			
-			curcross = (((xleft ^ 0x8000000) >> 14) & 0x3fff) < (((xright ^ 0x8000000) >> 14) & 0x3fff);
+			
+			curcross = ((xleft ^ (1 << 27)) & (0x3fff << 14)) < ((xright ^ (1 << 27)) & (0x3fff << 14));
 			
 
 			invaly |= curcross;
@@ -6424,8 +6424,7 @@ static void edgewalker_for_prims(INT32* ewdata)
 			allover &= curover;
 			allunder &= curunder; 
 
-			
-			curcross = (((xright ^ 0x8000000) >> 14) & 0x3fff) < (((xleft ^ 0x8000000) >> 14) & 0x3fff);
+			curcross = ((xright ^ (1 << 27)) & (0x3fff << 14)) < ((xleft ^ (1 << 27)) & (0x3fff << 14));
             
 			invaly |= curcross;
 			invalyscan[spix] = invaly;
@@ -7937,11 +7936,12 @@ STRICTINLINE void blender_equation_cycle0(int* r, int* g, int* b, int bsel_speci
 
 	if (!other_modes.force_blend)
 	{
-		sum = (blend1a >> 2) + (blend2a >> 2) + 1;
 		
 		
 		
-		sum <<= 11;
+		
+		
+		sum = ((blend1a & ~3) + (blend2a & ~3) + 4) << 9;
 		*r = bldiv_hwaccurate_table[sum | (*r)];
 		*g = bldiv_hwaccurate_table[sum | (*g)];
 		*b = bldiv_hwaccurate_table[sum | (*b)];
@@ -7993,8 +7993,9 @@ STRICTINLINE void blender_equation_cycle1(int* r, int* g, int* b, int bsel_speci
 
 	if (!other_modes.force_blend)
 	{
-		sum = (blend1a >> 2) + (blend2a >> 2) + 1;
-		sum <<= 11;
+		
+		
+		sum = ((blend1a & ~3) + (blend2a & ~3) + 4) << 9;
 		*r = bldiv_hwaccurate_table[sum | (*r)];
 		*g = bldiv_hwaccurate_table[sum | (*g)];
 		*b = bldiv_hwaccurate_table[sum | (*b)];
@@ -9490,15 +9491,8 @@ STRICTINLINE void rgbaz_correct_tris(INT32 offx, INT32 offy, INT32* r, INT32* g,
 
 	INT32 summand_xr, summand_yr, summand_xb, summand_yb, summand_xg, summand_yg, summand_xa, summand_ya;
 	INT32 summand_xz, summand_yz;
-	if (curpixel_cvg == 8)
-	{
-		*r >>= 2;
-		*g >>= 2;
-		*b >>= 2;
-		*a >>= 2;
-		*z = (*z >> 3) & 0x7ffff;
-	}
-	else
+	
+	if (curpixel_cvg != 8)
 	{
 		summand_xr = offx * spans_cdr;
 		summand_yr = offy * spans_drdy;
@@ -9517,6 +9511,14 @@ STRICTINLINE void rgbaz_correct_tris(INT32 offx, INT32 offy, INT32* r, INT32* g,
 		*b = ((*b << 2) + summand_xb + summand_yb) >> 4;
 		*a = ((*a << 2) + summand_xa + summand_ya) >> 4;
 		*z = (((*z << 2) + summand_xz + summand_yz) >> 5) & 0x7ffff;
+	}
+	else
+	{
+		*r >>= 2;
+		*g >>= 2;
+		*b >>= 2;
+		*a >>= 2;
+		*z = (*z >> 3) & 0x7ffff;
 	}
 }
 
@@ -9620,7 +9622,8 @@ INLINE void tcdiv_persp(INT32 ss, INT32 st, INT32 sw, INT32* sss, INT32* sst)
 	
 	int overunder_s = 0, overunder_t = 0;
 	
-	if ((sw & 0x8000) || !(sw & 0x7fff))
+	
+	if (SIGN16(sw) <= 0)
 		w_carry = 1;
 
 	sw &= 0x7fff;
@@ -9635,37 +9638,39 @@ INLINE void tcdiv_persp(INT32 ss, INT32 st, INT32 sw, INT32* sss, INT32* sst)
 	tprod = SIGN16(st) * tlu_rcp;
 
 	
-	tempmask = ((1 << (shift + 1)) - 1) << (29 - shift);
+	
+	
+	tempmask = ((1 << 30) - 1) & -((1 << 29) >> shift);
 	
 	outofbounds_s = sprod & tempmask;
 	outofbounds_t = tprod & tempmask;
 	
-	if (shift != 0xe)
+	if (shift == 0xe)
+	{
+		temps = sprod << 1;
+		tempt = tprod << 1;
+	}
+	else
 	{
 		shift_value = 13 - shift;
 		temps = sprod = (sprod >> shift_value);
 		tempt = tprod = (tprod >> shift_value);
 	}
-	else
-	{
-		temps = sprod << 1;
-		tempt = tprod << 1;
-	}
 	
 	if (outofbounds_s != tempmask && outofbounds_s != 0)
 	{
-		if (!(sprod & (1 << 29)))
-			overunder_s = 2 << 17;
-		else
+		if (sprod & (1 << 29))
 			overunder_s = 1 << 17;
+		else
+			overunder_s = 2 << 17;
 	}
 
 	if (outofbounds_t != tempmask && outofbounds_t != 0)
 	{
-		if (!(tprod & (1 << 29)))
-			overunder_t = 2 << 17;
-		else
+		if (tprod & (1 << 29))
 			overunder_t = 1 << 17;
+		else
+			overunder_t = 2 << 17;
 	}
 
 	if (w_carry)
