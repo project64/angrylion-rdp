@@ -647,6 +647,7 @@ struct onetime
 
 extern INT32 pitchindwords;
 extern HRESULT res;
+extern LPDIRECTDRAW7 lpdd;
 extern LPDIRECTDRAWSURFACE7 lpddsprimary; 
 extern LPDIRECTDRAWSURFACE7 lpddsback;
 extern DDSURFACEDESC2 ddsd;
@@ -1230,8 +1231,20 @@ int rdp_update()
 	
 	
 	res = IDirectDrawSurface_Lock(lpddsback, 0, &ddsd, DDLOCK_SURFACEMEMORYPTR | DDLOCK_NOSYSLOCK, 0);
-	if (res != DD_OK)
-		fatalerror("Lock failed.");
+	if (res == DDERR_SURFACELOST)
+	{
+		while(1){
+		res = IDirectDrawSurface_Restore(lpddsback);
+		if (res != DD_OK)
+			fatalerror("Restore failed with DirectDraw error %x", res);
+		res = IDirectDrawSurface_Lock(lpddsback, 0, &ddsd, DDLOCK_SURFACEMEMORYPTR | DDLOCK_NOSYSLOCK, 0);
+		if (res != DDERR_SURFACELOST)
+			break;
+		};
+	}
+	else if (res != DD_OK)
+		fatalerror("Lock failed with DirectDraw error %x", res);
+
 	PreScale = (INT32*)ddsd.lpSurface;
 
 	
@@ -1531,8 +1544,10 @@ int rdp_update()
 	}
 
 	res = IDirectDrawSurface_Unlock(lpddsback, 0);
-	if (res != DD_OK)
-		fatalerror("Couldn't unlock an offscreen surface.");
+	if (res != DD_OK && res != DDERR_GENERIC && res != DDERR_SURFACELOST)
+		fatalerror("Couldn't unlock the offscreen surface with DirectDraw error %x", res);
+	
+	
 
 	
 	
@@ -1542,10 +1557,23 @@ int rdp_update()
 	src.bottom = visiblelines;
 
 	if (dst.left < dst.right && dst.top < dst.bottom)
+	{
 		res = IDirectDrawSurface_Blt(lpddsprimary, &dst, lpddsback, &src, DDBLT_WAIT, 0);
-	if (res != DD_OK && res != DDERR_GENERIC)
-			fatalerror("Scaled blit failed. %x", res);
-	
+		if (res == DDERR_SURFACELOST)
+		{
+			while(1){
+			res = IDirectDraw4_RestoreAllSurfaces(lpdd);
+			if (res != DD_OK)
+				fatalerror("RestoreAllSurfaces failed with DirectDraw error %x", res);
+			res = IDirectDrawSurface_Blt(lpddsprimary, &dst, lpddsback, &src, DDBLT_WAIT, 0);		
+			if (res != DDERR_SURFACELOST)
+				break;
+			}
+		}
+		else if (res != DD_OK && res != DDERR_GENERIC)
+			fatalerror("Scaled blit failed with DirectDraw error %x", res);
+		
+	}
 
 	
 
