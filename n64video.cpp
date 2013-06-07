@@ -469,7 +469,7 @@ STRICTINLINE INT32 normalize_dzpix(INT32 sum);
 STRICTINLINE INT32 CLIP(INT32 value,INT32 min,INT32 max);
 STRICTINLINE void video_filter16(int* r, int* g, int* b, UINT32 fboffset, UINT32 num, UINT32 hres, UINT32 centercvg);
 STRICTINLINE void video_filter32(int* endr, int* endg, int* endb, UINT32 fboffset, UINT32 num, UINT32 hres, UINT32 centercvg);
-STRICTINLINE void divot_filter(int* r, int* g, int* b, CCVG* centercolor, CCVG* leftcolor, CCVG* rightcolor);
+STRICTINLINE void divot_filter(CCVG* final, CCVG centercolor, CCVG leftcolor, CCVG rightcolor);
 STRICTINLINE void restore_filter16(int* r, int* g, int* b, UINT32 fboffset, UINT32 num, UINT32 hres);
 STRICTINLINE void restore_filter32(int* r, int* g, int* b, UINT32 fboffset, UINT32 num, UINT32 hres);
 STRICTINLINE void gamma_filters(int* r, int* g, int* b, int gamma_and_dither);
@@ -499,7 +499,7 @@ INLINE void rgb_dither_nothing(int* r, int* g, int* b, int dith);
 INLINE void get_dither_noise_complete(int x, int y, int* cdith, int* adith);
 INLINE void get_dither_only(int x, int y, int* cdith, int* adith);
 INLINE void get_dither_nothing(int x, int y, int* cdith, int* adith);
-STRICTINLINE void vi_vl_lerp(int *r, int *g, int *b, int downr, int downg, int downb, UINT32 frac);
+STRICTINLINE void vi_vl_lerp(CCVG* up, CCVG down, UINT32 frac);
 STRICTINLINE void rgbaz_clipper(int r, int g, int b, int a, int *z);
 STRICTINLINE void rgbaz_correct_tris(INT32 offx, INT32 offy, INT32* r, INT32* g, INT32* b, INT32* a, INT32* z);
 STRICTINLINE void vi_fetch_filter16(CCVG* res, UINT32 fboffset, UINT32 cur_x, UINT32 fsaa, UINT32 dither_filter, UINT32 vres);
@@ -1036,9 +1036,11 @@ int rdp_update()
 	
 	int i, j;
 	UINT32 final = 0;
-	
-	CCVG *viaa_cache, *viaa_cache_next;
+
+	CCVG *viaa_cache, *viaa_cache_next, *divot_cache, *divot_cache_next;
 	CCVG viaa_array[2048];
+	CCVG divot_array[2048];
+
 	
 	
 
@@ -1194,27 +1196,28 @@ int rdp_update()
 	UINT32 frame_buffer = vi_origin & 0xffffff;
 	
 	UINT32 pixels = 0, nextpixels = 0;
-	int r = 0, g = 0, b = 0, nextr = 0, nextg = 0, nextb = 0;
-	int scanr = 0, scang = 0, scanb = 0, scannextr = 0, scannextg = 0, scannextb = 0;
+	CCVG color, nextcolor, scancolor, scannextcolor;
+	int r = 0, g = 0, b = 0;
 	int xfrac = 0, yfrac = 0; 
 	UINT32 y_start = (vi_y_scale >> 16) & 0xfff;
 	UINT32 y_add = vi_y_scale & 0xfff;
 	int vi_width_low = vi_width & 0xfff;
-	int divot_bounds = 0, next_divot_bounds = 0, scan_divot_bounds = 0, scan_next_divot_bounds = 0;
 	int line_x = 0, next_line_x = 0, prev_line_x = 0, far_line_x = 0;
-	int cache_marker = 0, cache_next_marker = 0;
+	int cache_marker = 0, cache_next_marker = 0, divot_cache_marker = 0, divot_cache_next_marker = 0;
 	int prev_scan_x = 0, scan_x = 0, next_scan_x = 0, far_scan_x = 0;
 	int prev_x = 0, cur_x = 0, next_x = 0, far_x = 0;
-	int notlasthor = 0, notlastvert = 0;
 
 	
 	UINT32 pix = 0;
 	UINT8 cur_cvg = 0;
 
+	int lerping = 0;
 	UINT32 prevy = 0;
-	CCVG* viaatemp;
+	CCVG* tempccvgptr;
 	viaa_cache = &viaa_array[0];
 	viaa_cache_next = &viaa_array[1024];
+	divot_cache = &divot_array[0];
+	divot_cache_next = &divot_array[1024];
 
 	INT32 *d = 0;
 
@@ -1345,37 +1348,43 @@ int rdp_update()
 
 					x_start = (vi_x_scale >> 16) & 0xfff;
 
-					if (!j)
-					{
-						cache_marker = cache_next_marker = cache_marker_init;
-					}
-					else if ((y_start >> 10) == (prevy + 1))
+					if ((y_start >> 10) == (prevy + 1) && j)
 					{
 						cache_marker = cache_next_marker;
 						cache_next_marker = cache_marker_init;
 						
-						viaatemp = viaa_cache;
+						tempccvgptr = viaa_cache;
 						viaa_cache = viaa_cache_next;
-						viaa_cache_next = viaatemp;
+						viaa_cache_next = tempccvgptr;
+						if (divot)
+						{
+							divot_cache_marker = divot_cache_next_marker;
+							divot_cache_next_marker = cache_marker_init;
+							tempccvgptr = divot_cache;
+							divot_cache = divot_cache_next;
+							divot_cache_next = tempccvgptr;
+						}
 					}
-					else if ((y_start >> 10) != prevy)
+					else if ((y_start >> 10) != prevy || !j)
 					{
 						cache_marker = cache_next_marker = cache_marker_init;
+						if (divot)
+							divot_cache_marker = divot_cache_next_marker = cache_marker_init; 
 					}
 
 					d = &PreScale[prescale_ptr];
 					prescale_ptr += linecount;
 
-					pixels = vi_width_low * (y_start >> 10);
-					nextpixels = pixels + vi_width_low;
-					yfrac = (y_start >> 5) & 0x1f;
 					prevy = y_start >> 10;
+					yfrac = (y_start >> 5) & 0x1f;
+					pixels = vi_width_low * prevy;
+					nextpixels = pixels + vi_width_low;					
 
 					for (i = 0; i < hres; i++)
 					{
 						line_x = x_start >> 10;
-						next_line_x = line_x + 1;
 						prev_line_x = line_x - 1;
+						next_line_x = line_x + 1;
 						far_line_x = line_x + 2;
 
 						cur_x = pixels + line_x;
@@ -1390,33 +1399,42 @@ int rdp_update()
 
 						xfrac = (x_start >> 5) & 0x1f;
 
+						lerping = lerp_en && (xfrac || yfrac);
+
 						
 						if (prev_line_x > cache_marker)
 						{
 							vi_fetch_filter_ptr(&viaa_cache[prev_line_x], frame_buffer, prev_x, fsaa, dither_filter, vres);
-							cache_marker = prev_line_x;
+							vi_fetch_filter_ptr(&viaa_cache[line_x], frame_buffer, cur_x, fsaa, dither_filter, vres);
+							vi_fetch_filter_ptr(&viaa_cache[next_line_x], frame_buffer, next_x, fsaa, dither_filter, vres);
+							cache_marker = next_line_x;
 						}
-						if (line_x > cache_marker)
+						else if (line_x > cache_marker)
 						{
 							vi_fetch_filter_ptr(&viaa_cache[line_x], frame_buffer, cur_x, fsaa, dither_filter, vres);
-							cache_marker = line_x;
+							vi_fetch_filter_ptr(&viaa_cache[next_line_x], frame_buffer, next_x, fsaa, dither_filter, vres);
+							cache_marker = next_line_x;
 						}
-						if (next_line_x > cache_marker)
+						else if (next_line_x > cache_marker)
 						{
 							vi_fetch_filter_ptr(&viaa_cache[next_line_x], frame_buffer, next_x, fsaa, dither_filter, vres);
 							cache_marker = next_line_x;
 						}
+
 						if (prev_line_x > cache_next_marker)
 						{
 							vi_fetch_filter_ptr(&viaa_cache_next[prev_line_x], frame_buffer, prev_scan_x, fsaa, dither_filter, vres);
-							cache_next_marker = prev_line_x;
+							vi_fetch_filter_ptr(&viaa_cache_next[line_x], frame_buffer, scan_x, fsaa, dither_filter, vres);
+							vi_fetch_filter_ptr(&viaa_cache_next[next_line_x], frame_buffer, next_scan_x, fsaa, dither_filter, vres);
+							cache_next_marker = next_line_x;
 						}
-						if (line_x > cache_next_marker)
+						else if (line_x > cache_next_marker)
 						{
 							vi_fetch_filter_ptr(&viaa_cache_next[line_x], frame_buffer, scan_x, fsaa, dither_filter, vres);
-							cache_next_marker = line_x;
+							vi_fetch_filter_ptr(&viaa_cache_next[next_line_x], frame_buffer, next_scan_x, fsaa, dither_filter, vres);
+							cache_next_marker = next_line_x;
 						}
-						if (next_line_x > cache_next_marker)
+						else if (next_line_x > cache_next_marker)
 						{
 							vi_fetch_filter_ptr(&viaa_cache_next[next_line_x], frame_buffer, next_scan_x, fsaa, dither_filter, vres);
 							cache_next_marker = next_line_x;
@@ -1425,59 +1443,75 @@ int rdp_update()
 						
 						if (divot)
 						{
-							divot_filter(&r, &g, &b, &viaa_cache[line_x], &viaa_cache[prev_line_x], &viaa_cache[next_line_x]);
-						}
-						else
-						{
-							r = viaa_cache[line_x].r;
-							g = viaa_cache[line_x].g;
-							b = viaa_cache[line_x].b;
-						}
-
-						
-						if (lerp_en && (xfrac || yfrac))
-						{
-
-						
-						if (divot)
-						{
 							if (far_line_x > cache_marker)
 							{
 								vi_fetch_filter_ptr(&viaa_cache[far_line_x], frame_buffer, far_x, fsaa, dither_filter, vres);
 								cache_marker = far_line_x;
 							}
-							divot_filter(&nextr, &nextg, &nextb, &viaa_cache[next_line_x], &viaa_cache[line_x], &viaa_cache[far_line_x]);
-
-							divot_filter(&scanr, &scang, &scanb, &viaa_cache_next[line_x], &viaa_cache_next[prev_line_x], &viaa_cache_next[next_line_x]);
 
 							if (far_line_x > cache_next_marker)
 							{
 								vi_fetch_filter_ptr(&viaa_cache_next[far_line_x], frame_buffer, far_scan_x, fsaa, dither_filter, vres);
 								cache_next_marker = far_line_x;
 							}
-							divot_filter(&scannextr, &scannextg, &scannextb, &viaa_cache_next[next_line_x], &viaa_cache_next[line_x], &viaa_cache_next[far_line_x]);
+
+							if (line_x > divot_cache_marker)
+							{
+								divot_filter(&divot_cache[line_x], viaa_cache[line_x], viaa_cache[prev_line_x], viaa_cache[next_line_x]);
+								divot_filter(&divot_cache[next_line_x], viaa_cache[next_line_x], viaa_cache[line_x], viaa_cache[far_line_x]);
+								divot_cache_marker = next_line_x;
+							}
+							else if (next_line_x > divot_cache_marker)
+							{
+								divot_filter(&divot_cache[next_line_x], viaa_cache[next_line_x], viaa_cache[line_x], viaa_cache[far_line_x]);
+								divot_cache_marker = next_line_x;
+							}
+
+							if (line_x > divot_cache_next_marker)
+							{
+								divot_filter(&divot_cache_next[line_x], viaa_cache_next[line_x], viaa_cache_next[prev_line_x], viaa_cache_next[next_line_x]);
+								divot_filter(&divot_cache_next[next_line_x], viaa_cache_next[next_line_x], viaa_cache_next[line_x], viaa_cache_next[far_line_x]);
+								divot_cache_next_marker = next_line_x;
+							}
+							else if (next_line_x > divot_cache_next_marker)
+							{
+								divot_filter(&divot_cache_next[next_line_x], viaa_cache_next[next_line_x], viaa_cache_next[line_x], viaa_cache_next[far_line_x]);
+								divot_cache_next_marker = next_line_x;
+							}
+
+							color = divot_cache[line_x];
+
 						}
 						else
 						{
-							nextr = viaa_cache[next_line_x].r;
-							nextg = viaa_cache[next_line_x].g;
-							nextb = viaa_cache[next_line_x].b;
-							scanr = viaa_cache_next[line_x].r;
-							scang = viaa_cache_next[line_x].g;
-							scanb = viaa_cache_next[line_x].b;
-							scannextr = viaa_cache_next[next_line_x].r;
-							scannextg = viaa_cache_next[next_line_x].g;
-							scannextb = viaa_cache_next[next_line_x].b;
+							color = viaa_cache[line_x];
 						}
 
+						if (lerping)
+						{
+							if (divot)
+							{
+								nextcolor = divot_cache[next_line_x];
+								scancolor = divot_cache_next[line_x];
+								scannextcolor = divot_cache_next[next_line_x];
+							}
+							else
+							{
+								nextcolor = viaa_cache[next_line_x];
+								scancolor = viaa_cache_next[line_x];
+								scannextcolor = viaa_cache_next[next_line_x];
+							}
 
-						
-						
-						
-						vi_vl_lerp(&r, &g, &b, scanr, scang, scanb, yfrac);
-						vi_vl_lerp(&nextr, &nextg, &nextb, scannextr, scannextg, scannextb, yfrac);
-						vi_vl_lerp(&r, &g, &b, nextr, nextg, nextb, xfrac);
+							
+							
+							vi_vl_lerp(&color, scancolor, yfrac);
+							vi_vl_lerp(&nextcolor, scannextcolor, yfrac);
+							vi_vl_lerp(&color, nextcolor, xfrac);
 						}
+
+						r = color.r;
+						g = color.g;
+						b = color.b;
 
 						gamma_filters(&r, &g, &b, gamma_and_dither);
 						
@@ -1584,7 +1618,8 @@ STRICTINLINE void vi_fetch_filter16(CCVG* res, UINT32 fboffset, UINT32 cur_x, UI
 
 	if (cur_cvg == 7)
 	{
-		restore_filter16(&r, &g, &b, fboffset, cur_x, fbw);
+		if (dither_filter)
+			restore_filter16(&r, &g, &b, fboffset, cur_x, fbw);
 	}
 	else
 	{
@@ -1615,7 +1650,8 @@ STRICTINLINE void vi_fetch_filter32(CCVG* res, UINT32 fboffset, UINT32 cur_x, UI
 	
 	if (cur_cvg == 7)
 	{
-		restore_filter32(&r, &g, &b, fboffset, cur_x, fbw);
+		if (dither_filter)
+			restore_filter32(&r, &g, &b, fboffset, cur_x, fbw);
 	}
 	else
 	{
@@ -8967,7 +9003,7 @@ STRICTINLINE void video_filter32(int* endr, int* endg, int* endb, UINT32 fboffse
 	*endb = colb & 0xff;
 }
 
-STRICTINLINE void divot_filter(int* r, int* g, int* b, CCVG* centercolor, CCVG* leftcolor, CCVG* rightcolor)
+STRICTINLINE void divot_filter(CCVG* final, CCVG centercolor, CCVG leftcolor, CCVG rightcolor)
 {
 
 
@@ -8976,11 +9012,9 @@ STRICTINLINE void divot_filter(int* r, int* g, int* b, CCVG* centercolor, CCVG* 
 
 	UINT32 leftr, leftg, leftb, rightr, rightg, rightb, centerr, centerg, centerb;
 
-	*r = centercolor->r;
-	*g = centercolor->g;
-	*b = centercolor->b;
+	*final = centercolor;
 	
-	if ((centercolor->cvg & leftcolor->cvg & rightcolor->cvg) == 7)
+	if ((centercolor.cvg & leftcolor.cvg & rightcolor.cvg) == 7)
 	
 	
 	
@@ -8988,31 +9022,31 @@ STRICTINLINE void divot_filter(int* r, int* g, int* b, CCVG* centercolor, CCVG* 
 		return;
 	}
 
-	leftr = leftcolor->r;	
-	leftg = leftcolor->g;	
-	leftb = leftcolor->b;
-	rightr = rightcolor->r;	
-	rightg = rightcolor->g;	
-	rightb = rightcolor->b;
-	centerr = *r;
-	centerg = *g;
-	centerb = *b;
+	leftr = leftcolor.r;	
+	leftg = leftcolor.g;	
+	leftb = leftcolor.b;
+	rightr = rightcolor.r;	
+	rightg = rightcolor.g;	
+	rightb = rightcolor.b;
+	centerr = centercolor.r;
+	centerg = centercolor.g;
+	centerb = centercolor.b;
 
 
 	if ((leftr >= centerr && rightr >= leftr) || (leftr >= rightr && centerr >= leftr))
-		*r = leftr;
+		final->r = leftr;
 	else if ((rightr >= centerr && leftr >= rightr) || (rightr >= leftr && centerr >= rightr))
-		*r = rightr;
+		final->r = rightr;
 
 	if ((leftg >= centerg && rightg >= leftg) || (leftg >= rightg && centerg >= leftg))
-		*g = leftg;
+		final->g = leftg;
 	else if ((rightg >= centerg && leftg >= rightg) || (rightg >= leftg && centerg >= rightg))
-		*g = rightg;
+		final->g = rightg;
 
 	if ((leftb >= centerb && rightb >= leftb) || (leftb >= rightb && centerb >= leftb))
-		*b = leftb;
+		final->b = leftb;
 	else if ((rightb >= centerb && leftb >= rightb) || (rightb >= leftb && centerb >= rightb))
-		*b = rightb;
+		final->b = rightb;
 }
 
 STRICTINLINE void restore_filter16(int* r, int* g, int* b, UINT32 fboffset, UINT32 num, UINT32 hres)
@@ -9437,21 +9471,20 @@ INLINE void get_dither_nothing(int x, int y, int* cdith, int* adith)
 {
 }
 
-STRICTINLINE void vi_vl_lerp(int *r, int *g, int *b, int downr, int downg, int downb, UINT32 frac)
+STRICTINLINE void vi_vl_lerp(CCVG* up, CCVG down, UINT32 frac)
 {
 	UINT32 r0, g0, b0;
 	if (!frac)
 		return;
-	r0 = *r;
-	g0 = *g;
-	b0 = *b;
 
-	r0 = ((((UINT32)downr - r0) * frac + 16) >> 5) + r0;
-	*r = r0 & 0xff;
-	g0 = ((((UINT32)downg - g0) * frac + 16) >> 5) + g0;
-	*g = g0 & 0xff;
-	b0 = ((((UINT32)downb - b0) * frac + 16) >> 5) + b0;
-	*b = b0 & 0xff;
+	r0 = up->r;
+	g0 = up->g;
+	b0 = up->b;
+	
+	up->r = ((((down.r - r0) * frac + 16) >> 5) + r0) & 0xff;
+	up->g = ((((down.g - g0) * frac + 16) >> 5) + g0) & 0xff;
+	up->b = ((((down.b - b0) * frac + 16) >> 5) + b0) & 0xff;
+
 }
 
 STRICTINLINE void rgbaz_clipper(int sr, int sg, int sb, int sa, int *sz)
