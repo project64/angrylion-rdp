@@ -99,10 +99,13 @@ typedef struct
 	int unscrx;
 	int validline;
 	INT32 r, g, b, a, s, t, w, z;
-	UINT32 mask[1024];
+	INT32 majorx[4];
+	INT32 minorx[4];
+	INT32 invalyscan[4];
 } SPAN;
 
 static SPAN span[1024];
+UINT32 cvgbuf[1024];
 
 
 static int spans_ds;
@@ -437,8 +440,8 @@ STRICTINLINE void blender_equation_cycle0_2(int* r, int* g, int* b, int bsel_spe
 STRICTINLINE void blender_equation_cycle1(int* r, int* g, int* b, int bsel_special);
 STRICTINLINE UINT32 rightcvghex(UINT32 x, UINT32 fmask); 
 STRICTINLINE UINT32 leftcvghex(UINT32 x, UINT32 fmask);
-STRICTINLINE void compute_cvg_noflip(INT32* majorx, INT32* minorx, INT32* invalyscan, INT32 scanline);
-STRICTINLINE void compute_cvg_flip(INT32* majorx, INT32* minorx, INT32* invalyscan, INT32 scanline);
+STRICTINLINE void compute_cvg_noflip(INT32 scanline);
+STRICTINLINE void compute_cvg_flip(INT32 scanline);
 INLINE void fbwrite_4(UINT32 curpixel, UINT32 r, UINT32 g, UINT32 b);
 INLINE void fbwrite_8(UINT32 curpixel, UINT32 r, UINT32 g, UINT32 b);
 INLINE void fbwrite_16(UINT32 curpixel, UINT32 r, UINT32 g, UINT32 b);
@@ -4595,11 +4598,22 @@ void render_spans_1cycle_complete(int start, int end, int tilenum, int flip)
 		zbcur = zb + curpixel;
 		zhbcur = zhb + curpixel;
 
-		length = flip ? (xstart - xendsc) : (xendsc - xstart);
+		if (!flip)
+		{
+			length = xendsc - xstart;
+			scdiff = xend - xendsc;
+			compute_cvg_noflip(i);
+		}
+		else
+		{
+			length = xstart - xendsc;
+			scdiff = xendsc - xend;
+			compute_cvg_flip(i);
+		}
+		
 		sigs.longspan = (length > 7);
 		sigs.midspan = (length == 7);
 
-		scdiff = flip ? (xendsc - xend) : (xend - xendsc);
 		
 		
 		if (scdiff)
@@ -4630,7 +4644,7 @@ void render_spans_1cycle_complete(int start, int end, int tilenum, int flip)
 			sigs.endspan = (j == length);
 			sigs.preendspan = (j == (length - 1));
 
-			lookup_cvmask_derivatives(span[i].mask[x], &offx, &offy);
+			lookup_cvmask_derivatives(cvgbuf[x], &offx, &offy);
 			
 
 			get_texel1_1cycle(&news, &newt, s, t, w, dsinc, dtinc, dwinc, i, &sigs);
@@ -4781,11 +4795,21 @@ void render_spans_1cycle_notexel1(int start, int end, int tilenum, int flip)
 		zbcur = zb + curpixel;
 		zhbcur = zhb + curpixel;
 
-		length = flip ? (xstart - xendsc) : (xendsc - xstart);
+		if (!flip)
+		{
+			length = xendsc - xstart;
+			scdiff = xend - xendsc;
+			compute_cvg_noflip(i);
+		}
+		else
+		{
+			length = xstart - xendsc;
+			scdiff = xendsc - xend;
+			compute_cvg_flip(i);
+		}
+
 		sigs.longspan = (length > 7);
 		sigs.midspan = (length == 7);
-
-		scdiff = flip ? (xendsc - xend) : (xend - xendsc);
 
 		if (scdiff)
 		{
@@ -4813,7 +4837,7 @@ void render_spans_1cycle_notexel1(int start, int end, int tilenum, int flip)
 			sigs.endspan = (j == length);
 			sigs.preendspan = (j == (length - 1));
 
-			lookup_cvmask_derivatives(span[i].mask[x], &offx, &offy);
+			lookup_cvmask_derivatives(cvgbuf[x], &offx, &offy);
 
 			tcdiv_ptr(ss, st, sw, &sss, &sst);
 
@@ -4918,8 +4942,18 @@ void render_spans_1cycle_notex(int start, int end, int tilenum, int flip)
 		zbcur = zb + curpixel;
 		zhbcur = zhb + curpixel;
 
-		length = flip ? (xstart - xendsc) : (xendsc - xstart);
-		scdiff = flip ? (xendsc - xend) : (xend - xendsc);
+		if (!flip)
+		{
+			length = xendsc - xstart;
+			scdiff = xend - xendsc;
+			compute_cvg_noflip(i);
+		}
+		else
+		{
+			length = xstart - xendsc;
+			scdiff = xendsc - xend;
+			compute_cvg_flip(i);
+		}
 
 		if (scdiff)
 		{
@@ -4938,7 +4972,7 @@ void render_spans_1cycle_notex(int start, int end, int tilenum, int flip)
 			sa = a >> 14;
 			sz = (z >> 10) & 0x3fffff;
 
-			lookup_cvmask_derivatives(span[i].mask[x], &offx, &offy);
+			lookup_cvmask_derivatives(cvgbuf[x], &offx, &offy);
 
 			rgbaz_correct_tris(offx, offy, &sr, &sg, &sb, &sa, &sz);
 			rgbaz_clipper(sr, sg, sb, sa, &sz);
@@ -5057,8 +5091,19 @@ void render_spans_2cycle_complete(int start, int end, int tilenum, int flip)
 		zbcur = zb + curpixel;
 		zhbcur = zhb + curpixel;
 
-		length = flip ? (xstart - xendsc) : (xendsc - xstart);
-		scdiff = flip ? (xendsc - xend) : (xend - xendsc);
+		if (!flip)
+		{
+			length = xendsc - xstart;
+			scdiff = xend - xendsc;
+			compute_cvg_noflip(i);
+		}
+		else
+		{
+			length = xstart - xendsc;
+			scdiff = xendsc - xend;
+			compute_cvg_flip(i);
+		}
+
 		
 		
 
@@ -5092,7 +5137,7 @@ void render_spans_2cycle_complete(int start, int end, int tilenum, int flip)
 			sz = (z >> 10) & 0x3fffff;
 			
 
-			lookup_cvmask_derivatives(span[i].mask[x], &offx, &offy);
+			lookup_cvmask_derivatives(cvgbuf[x], &offx, &offy);
 
 			get_nexttexel0_2cycle(&news, &newt, s, t, w, dsinc, dtinc, dwinc);
 			
@@ -5255,8 +5300,18 @@ void render_spans_2cycle_notexelnext(int start, int end, int tilenum, int flip)
 		zbcur = zb + curpixel;
 		zhbcur = zhb + curpixel;
 
-		length = flip ? (xstart - xendsc) : (xendsc - xstart);
-		scdiff = flip ? (xendsc - xend) : (xend - xendsc);
+		if (!flip)
+		{
+			length = xendsc - xstart;
+			scdiff = xend - xendsc;
+			compute_cvg_noflip(i);
+		}
+		else
+		{
+			length = xstart - xendsc;
+			scdiff = xendsc - xend;
+			compute_cvg_flip(i);
+		}
 
 		if (scdiff)
 		{
@@ -5281,7 +5336,7 @@ void render_spans_2cycle_notexelnext(int start, int end, int tilenum, int flip)
 			sw = w >> 16;
 			sz = (z >> 10) & 0x3fffff;
 
-			lookup_cvmask_derivatives(span[i].mask[x], &offx, &offy);
+			lookup_cvmask_derivatives(cvgbuf[x], &offx, &offy);
 			
 			tcdiv_ptr(ss, st, sw, &sss, &sst);
 
@@ -5406,8 +5461,18 @@ void render_spans_2cycle_notexel1(int start, int end, int tilenum, int flip)
 		zbcur = zb + curpixel;
 		zhbcur = zhb + curpixel;
 
-		length = flip ? (xstart - xendsc) : (xendsc - xstart);
-		scdiff = flip ? (xendsc - xend) : (xend - xendsc);
+		if (!flip)
+		{
+			length = xendsc - xstart;
+			scdiff = xend - xendsc;
+			compute_cvg_noflip(i);
+		}
+		else
+		{
+			length = xstart - xendsc;
+			scdiff = xendsc - xend;
+			compute_cvg_flip(i);
+		}
 
 		if (scdiff)
 		{
@@ -5432,7 +5497,7 @@ void render_spans_2cycle_notexel1(int start, int end, int tilenum, int flip)
 			sw = w >> 16;
 			sz = (z >> 10) & 0x3fffff;
 
-			lookup_cvmask_derivatives(span[i].mask[x], &offx, &offy);
+			lookup_cvmask_derivatives(cvgbuf[x], &offx, &offy);
 			
 			tcdiv_ptr(ss, st, sw, &sss, &sst);
 
@@ -5543,8 +5608,18 @@ void render_spans_2cycle_notex(int start, int end, int tilenum, int flip)
 		zbcur = zb + curpixel;
 		zhbcur = zhb + curpixel;
 
-		length = flip ? (xstart - xendsc) : (xendsc - xstart);
-		scdiff = flip ? (xendsc - xend) : (xend - xendsc);
+		if (!flip)
+		{
+			length = xendsc - xstart;
+			scdiff = xend - xendsc;
+			compute_cvg_noflip(i);
+		}
+		else
+		{
+			length = xstart - xendsc;
+			scdiff = xendsc - xend;
+			compute_cvg_flip(i);
+		}
 
 		if (scdiff)
 		{
@@ -5563,7 +5638,7 @@ void render_spans_2cycle_notex(int start, int end, int tilenum, int flip)
 			sa = a >> 14;
 			sz = (z >> 10) & 0x3fffff;
 
-			lookup_cvmask_derivatives(span[i].mask[x], &offx, &offy);
+			lookup_cvmask_derivatives(cvgbuf[x], &offx, &offy);
 
 			rgbaz_correct_tris(offx, offy, &sr, &sg, &sb, &sa, &sz);
 			rgbaz_clipper(sr, sg, sb, sa, &sz);
@@ -6292,9 +6367,6 @@ static void edgewalker_for_prims(INT32* ewdata)
 	int ldflag = (sign_dxhdy ^ flip) ? 0 : 3;
 	int invaly = 1;
 	int length = 0;
-	INT32 majorx[4];
-	INT32 minorx[4];
-	INT32 invalyscan[4];
 	INT32 xrsc = 0, xlsc = 0, stickybit = 0;
 	INT32 yllimit = 0, yhlimit = 0;
 	if (yl & 0x2000)
@@ -6364,7 +6436,7 @@ static void edgewalker_for_prims(INT32* ewdata)
 			xrsc = curunder ? clipxhshift : (((xright >> 13) & 0x3ffe) | stickybit);
 			curover = ((xrsc & 0x2000) || (xrsc & 0x1fff) >= clipxlshift);
 			xrsc = curover ? clipxlshift : xrsc;
-			majorx[spix] = xrsc & 0x1fff;
+			span[j].majorx[spix] = xrsc & 0x1fff;
 			allover &= curover;
 			allunder &= curunder; 
 
@@ -6374,7 +6446,7 @@ static void edgewalker_for_prims(INT32* ewdata)
 			xlsc = curunder ? clipxhshift : (((xleft >> 13) & 0x3ffe) | stickybit);
 			curover = ((xlsc & 0x2000) || (xlsc & 0x1fff) >= clipxlshift);
 			xlsc = curover ? clipxlshift : xlsc;
-			minorx[spix] = xlsc & 0x1fff;
+			span[j].minorx[spix] = xlsc & 0x1fff;
 			allover &= curover;
 			allunder &= curunder; 
 			
@@ -6384,7 +6456,7 @@ static void edgewalker_for_prims(INT32* ewdata)
 			
 
 			invaly |= curcross;
-			invalyscan[spix] = invaly;
+			span[j].invalyscan[spix] = invaly;
 			allinval &= invaly;
 
 			if (!invaly)
@@ -6406,8 +6478,6 @@ static void edgewalker_for_prims(INT32* ewdata)
 				span[j].rx = minxhx;
 				span[j].validline  = !allinval && !allover && !allunder && (!scfield || (scfield && !(sckeepodd ^ (j & 1))));
 				
-				if (span[j].validline)
-					compute_cvg_flip(majorx, minorx, invalyscan, j);
 			}
 			
 						           
@@ -6454,7 +6524,7 @@ static void edgewalker_for_prims(INT32* ewdata)
 			xrsc = curunder ? clipxhshift : (((xright >> 13) & 0x3ffe) | stickybit);
 			curover = ((xrsc & 0x2000) || (xrsc & 0x1fff) >= clipxlshift);
 			xrsc = curover ? clipxlshift : xrsc;
-			majorx[spix] = xrsc & 0x1fff;
+			span[j].majorx[spix] = xrsc & 0x1fff;
 			allover &= curover;
 			allunder &= curunder; 
 
@@ -6464,14 +6534,14 @@ static void edgewalker_for_prims(INT32* ewdata)
 			xlsc = curunder ? clipxhshift : (((xleft >> 13) & 0x3ffe) | stickybit);
 			curover = ((xlsc & 0x2000) || (xlsc & 0x1fff) >= clipxlshift);
 			xlsc = curover ? clipxlshift : xlsc;
-			minorx[spix] = xlsc & 0x1fff;
+			span[j].minorx[spix] = xlsc & 0x1fff;
 			allover &= curover;
 			allunder &= curunder; 
 
 			curcross = ((xright ^ (1 << 27)) & (0x3fff << 14)) < ((xleft ^ (1 << 27)) & (0x3fff << 14));
             
 			invaly |= curcross;
-			invalyscan[spix] = invaly;
+			span[j].invalyscan[spix] = invaly;
 			allinval &= invaly;
 
 			if (!invaly)
@@ -6492,8 +6562,6 @@ static void edgewalker_for_prims(INT32* ewdata)
 				span[j].lx = minxmx;
 				span[j].rx = maxxhx;
 				span[j].validline  = !allinval && !allover && !allunder && (!scfield || (scfield && !(sckeepodd ^ (j & 1))));
-				if (span[j].validline)
-					compute_cvg_noflip(majorx, minorx, invalyscan, j);				
 			}
 			
 		}
@@ -8070,7 +8138,7 @@ STRICTINLINE UINT32 leftcvghex(UINT32 x, UINT32 fmask)
 	return (covered & fmask);
 }
 
-STRICTINLINE void compute_cvg_flip(INT32* majorx, INT32* minorx, INT32* invalyscan, INT32 scanline)
+STRICTINLINE void compute_cvg_flip(INT32 scanline)
 {
 	INT32 purgestart, purgeend;
 	int i, length, fmask, maskshift, fmaskshifted;
@@ -8081,13 +8149,13 @@ STRICTINLINE void compute_cvg_flip(INT32* majorx, INT32* minorx, INT32* invalysc
 	length = purgeend - purgestart;
 	if (length >= 0)
 	{
-		memset(&span[scanline].mask[purgestart], 0, (length + 1) << 2);
+		memset(&cvgbuf[purgestart], 0, (length + 1) << 2);
 		for(i = 0; i < 4; i++)
 		{
-			if (!invalyscan[i])
+			if (!span[scanline].invalyscan[i])
 			{
-				minorcur = minorx[i];
-				majorcur = majorx[i];
+				minorcur = span[scanline].minorx[i];
+				majorcur = span[scanline].majorx[i];
 				minorcurint = minorcur >> 3;
 				majorcurint = majorcur >> 3;
 				fmask = 0xa >> (i & 1);
@@ -8102,22 +8170,22 @@ STRICTINLINE void compute_cvg_flip(INT32* majorx, INT32* minorx, INT32* invalysc
 
 				if (minorcurint != majorcurint)
 				{
-					span[scanline].mask[minorcurint] |= (rightcvghex(minorcur, fmask) << maskshift);
-					span[scanline].mask[majorcurint] |= (leftcvghex(majorcur, fmask) << maskshift);
+					cvgbuf[minorcurint] |= (rightcvghex(minorcur, fmask) << maskshift);
+					cvgbuf[majorcurint] |= (leftcvghex(majorcur, fmask) << maskshift);
 				}
 				else
 				{
 					samecvg = rightcvghex(minorcur, fmask) & leftcvghex(majorcur, fmask);
-					span[scanline].mask[majorcurint] |= (samecvg << maskshift);
+					cvgbuf[majorcurint] |= (samecvg << maskshift);
 				}
 				for (; fleft < minorcurint; fleft++)
-					span[scanline].mask[fleft] |= fmaskshifted;
+					cvgbuf[fleft] |= fmaskshifted;
 			}
 		}
 	}
 }
 
-STRICTINLINE void compute_cvg_noflip(INT32* majorx, INT32* minorx, INT32* invalyscan, INT32 scanline)
+STRICTINLINE void compute_cvg_noflip(INT32 scanline)
 {
 	INT32 purgestart, purgeend;
 	int i, length, fmask, maskshift, fmaskshifted;
@@ -8129,14 +8197,14 @@ STRICTINLINE void compute_cvg_noflip(INT32* majorx, INT32* minorx, INT32* invaly
 
 	if (length >= 0)
 	{
-		memset(&span[scanline].mask[purgestart], 0, (length + 1) << 2);
+		memset(&cvgbuf[purgestart], 0, (length + 1) << 2);
 
 		for(i = 0; i < 4; i++)
 		{
-			if (!invalyscan[i])
+			if (!span[scanline].invalyscan[i])
 			{
-				minorcur = minorx[i];
-				majorcur = majorx[i];
+				minorcur = span[scanline].minorx[i];
+				majorcur = span[scanline].majorx[i];
 				minorcurint = minorcur >> 3;
 				majorcurint = majorcur >> 3;
 				fmask = 0xa >> (i & 1);
@@ -8146,16 +8214,16 @@ STRICTINLINE void compute_cvg_noflip(INT32* majorx, INT32* minorx, INT32* invaly
 
 				if (minorcurint != majorcurint)
 				{
-					span[scanline].mask[minorcurint] |= (leftcvghex(minorcur, fmask) << maskshift);
-					span[scanline].mask[majorcurint] |= (rightcvghex(majorcur, fmask) << maskshift);
+					cvgbuf[minorcurint] |= (leftcvghex(minorcur, fmask) << maskshift);
+					cvgbuf[majorcurint] |= (rightcvghex(majorcur, fmask) << maskshift);
 				}
 				else
 				{
 					samecvg = leftcvghex(minorcur, fmask) & rightcvghex(majorcur, fmask);
-					span[scanline].mask[majorcurint] |= (samecvg << maskshift);
+					cvgbuf[majorcurint] |= (samecvg << maskshift);
 				}
 				for (; fleft < majorcurint; fleft++)
-					span[scanline].mask[fleft] |= fmaskshifted;
+					cvgbuf[fleft] |= fmaskshifted;
 			}
 		}
 	}
