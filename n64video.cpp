@@ -23,7 +23,7 @@ extern GFX_INFO gfx;
 
 #define GET_LOW_RGBA16_TMEM(x)	(replicated_rgba[((x) >> 1) & 0x1f])
 #define GET_MED_RGBA16_TMEM(x)	(replicated_rgba[((x) >> 6) & 0x1f])
-#define GET_HI_RGBA16_TMEM(x)	(replicated_rgba[((x) >> 11) & 0x1f])
+#define GET_HI_RGBA16_TMEM(x)	(replicated_rgba[(x) >> 11])
 
 INLINE void fatalerror(const char * err, ...)
 {
@@ -645,7 +645,7 @@ CVtcmaskDERIVATIVE cvarray[0x100];
 
 struct onetime
 {
-	int ntscnolerp, copymstrangecrashes, fillmcrashes, fillmbitcrashes, dpcurunaligned;
+	int ntscnolerp, copymstrangecrashes, fillmcrashes, fillmbitcrashes, dpcurunaligned, syncfullcrash;
 } onetimewarnings;
 
 extern INT32 pitchindwords;
@@ -2373,6 +2373,8 @@ INLINE void fetch_texel(COLOR *color, int s, int t, UINT32 tilenum)
 
 	
 
+	
+
 	switch ((tile[tilenum].format << 2) | tile[tilenum].size)
 	{
 	case TEXEL_RGBA4:
@@ -2382,7 +2384,7 @@ INLINE void fetch_texel(COLOR *color, int s, int t, UINT32 tilenum)
 			UINT8 byteval, c; 
 
 			byteval = TMEM[taddr & 0xfff];
-			c = ((s & 1)) ? (byteval & 0xf) : ((byteval >> 4) & 0xf);
+			c = ((s & 1)) ? (byteval & 0xf) : (byteval >> 4);
 			c |= (c << 4);
 			color->r = c;
 			color->g = c;
@@ -2432,10 +2434,10 @@ INLINE void fetch_texel(COLOR *color, int s, int t, UINT32 tilenum)
 			
 			taddr &= 0x3ff;
 			c = tc16[taddr];
-			color->r = (c >> 8) & 0xff;
+			color->r = c >> 8;
 			color->g = c & 0xff;
 			c = tc16[taddr | 0x400];
-			color->b = (c >> 8) & 0xff;
+			color->b = c >> 8;
 			color->a = c & 0xff;
 		}
 		break;
@@ -2538,7 +2540,7 @@ INLINE void fetch_texel(COLOR *color, int s, int t, UINT32 tilenum)
 			c = tc16[taddr & 0x7ff];
 			color->r = c >> 8;
 			color->g = c & 0xff;
-			color->b = c >> 8;
+			color->b = color->r;
 			color->a = (c & 1) ? 0xff : 0;
 		}
 		break;
@@ -2552,7 +2554,7 @@ INLINE void fetch_texel(COLOR *color, int s, int t, UINT32 tilenum)
 			c = tc16[taddr & 0x7ff];
 			color->r = c >> 8;
 			color->g = c & 0xff;
-			color->b = c >> 8;
+			color->b = color->r;
 			color->a = (c & 1) ? 0xff : 0;
 			
 		}
@@ -2616,7 +2618,7 @@ INLINE void fetch_texel(COLOR *color, int s, int t, UINT32 tilenum)
 			c = tc16[taddr & 0x7ff];
 			color->r = c >> 8;
 			color->g = c & 0xff;
-			color->b = c >> 8;
+			color->b = color->r;
 			color->a = (c & 1) ? 0xff : 0;
 		}
 		break;
@@ -2660,7 +2662,7 @@ INLINE void fetch_texel(COLOR *color, int s, int t, UINT32 tilenum)
 			c = tc16[taddr & 0x7ff];
 			color->r = c >> 8;
 			color->g = c & 0xff;
-			color->b = c >> 8;
+			color->b = color->r;
 			color->a = (c & 1) ? 0xff : 0;
 		}
 		break;
@@ -2674,7 +2676,7 @@ INLINE void fetch_texel(COLOR *color, int s, int t, UINT32 tilenum)
 			c = tc16[taddr & 0x7ff];
 			color->r = c >> 8;
 			color->g = c & 0xff;
-			color->b = c >> 8;
+			color->b = color->r;
 			color->a = (c & 1) ? 0xff : 0;
 		}
 		break;
@@ -2703,7 +2705,7 @@ INLINE void fetch_texel_entlut(COLOR *color, int s, int t, UINT32 tilenum)
 			taddr = ((tbase << 4) + s) >> 1;
 			taddr ^= ((t & 1) ? BYTE_XOR_DWORD_SWAP : BYTE_ADDR_XOR);
 			c = TMEM[taddr & 0x7ff];
-			c = (s & 1) ? (c & 0xf) : ((c >> 4) & 0xf);
+			c = (s & 1) ? (c & 0xf) : (c >> 4);
 			c = tlut[(((tpal << 4) | c) << 2) ^ WORD_ADDR_XOR];
 		}
 		break;
@@ -2712,7 +2714,7 @@ INLINE void fetch_texel_entlut(COLOR *color, int s, int t, UINT32 tilenum)
 			taddr = (tbase << 3) + s;
 			taddr ^= ((t & 1) ? BYTE_XOR_DWORD_SWAP : BYTE_ADDR_XOR);
 			c = TMEM[taddr & 0x7ff];
-			c = (s & 1) ? (c & 0xf) : ((c >> 4) & 0xf);
+			c = (s & 1) ? (c & 0xf) : (c >> 4);
 			c = tlut[(((tpal << 4) | c) << 2) ^ WORD_ADDR_XOR];
 		}
 		break;
@@ -2734,7 +2736,8 @@ INLINE void fetch_texel_entlut(COLOR *color, int s, int t, UINT32 tilenum)
 			taddr = (tbase << 2) + s;
 			taddr ^= ((t & 1) ? WORD_XOR_DWORD_SWAP : WORD_ADDR_XOR);
 			c = tc16[taddr & 0x3ff];
-			c = tlut[((c >> 8) << 2) ^ WORD_ADDR_XOR];
+			c = tlut[((c & ~3) >> 6) ^ WORD_ADDR_XOR];
+			
 		}
 		break;
 	case 11:
@@ -2752,7 +2755,7 @@ INLINE void fetch_texel_entlut(COLOR *color, int s, int t, UINT32 tilenum)
 			taddr = (tbase << 2) + s;
 			taddr ^= ((t & 1) ? WORD_XOR_DWORD_SWAP : WORD_ADDR_XOR);
 			c = tc16[taddr & 0x3ff];
-			c = tlut[((c >> 8) << 2) ^ WORD_ADDR_XOR];
+			c = tlut[((c & ~3) >> 6) ^ WORD_ADDR_XOR];
 		}
 		break;
 	case 15:
@@ -2777,7 +2780,7 @@ INLINE void fetch_texel_entlut(COLOR *color, int s, int t, UINT32 tilenum)
 	}
 	else
 	{
-		color->r = color->g = color->b = (c >> 8) & 0xff;
+		color->r = color->g = color->b = c >> 8;
 		color->a = c & 0xff;
 	}
 
@@ -2820,14 +2823,14 @@ INLINE void fetch_texel_quadro(COLOR *color0, COLOR *color1, COLOR *color2, COLO
 			taddr3 &= 0xfff;
 			ands = s0 & 1;
 			byteval = TMEM[taddr0];
-			c = (ands) ? (byteval & 0xf) : ((byteval >> 4) & 0xf);
+			c = (ands) ? (byteval & 0xf) : (byteval >> 4);
 			c |= (c << 4);
 			color0->r = c;
 			color0->g = c;
 			color0->b = c;
 			color0->a = c;
 			byteval = TMEM[taddr2];
-			c = (ands) ? (byteval & 0xf) : ((byteval >> 4) & 0xf);
+			c = (ands) ? (byteval & 0xf) : (byteval >> 4);
 			c |= (c << 4);
 			color2->r = c;
 			color2->g = c;
@@ -2836,14 +2839,14 @@ INLINE void fetch_texel_quadro(COLOR *color0, COLOR *color1, COLOR *color2, COLO
 
 			ands = s1 & 1;
 			byteval = TMEM[taddr1];
-			c = (ands) ? (byteval & 0xf) : ((byteval >> 4) & 0xf);
+			c = (ands) ? (byteval & 0xf) : (byteval >> 4);
 			c |= (c << 4);
 			color1->r = c;
 			color1->g = c;
 			color1->b = c;
 			color1->a = c;
 			byteval = TMEM[taddr3];
-			c = (ands) ? (byteval & 0xf) : ((byteval >> 4) & 0xf);
+			c = (ands) ? (byteval & 0xf) : (byteval >> 4);
 			c |= (c << 4);
 			color3->r = c;
 			color3->g = c;
@@ -2953,28 +2956,28 @@ INLINE void fetch_texel_quadro(COLOR *color0, COLOR *color1, COLOR *color2, COLO
 			taddr2 &= 0x3ff;
 			taddr3 &= 0x3ff;
 			c0 = tc16[taddr0];
-			color0->r = (c0 >> 8) & 0xff;
+			color0->r = c0 >> 8;
 			color0->g = c0 & 0xff;
 			c0 = tc16[taddr0 | 0x400];
-			color0->b = (c0 >>  8) & 0xff;
+			color0->b = c0 >>  8;
 			color0->a = c0 & 0xff;
 			c1 = tc16[taddr1];
-			color1->r = (c1 >> 8) & 0xff;
+			color1->r = c1 >> 8;
 			color1->g = c1 & 0xff;
 			c1 = tc16[taddr1 | 0x400];
-			color1->b = (c1 >>  8) & 0xff;
+			color1->b = c1 >>  8;
 			color1->a = c1 & 0xff;
 			c2 = tc16[taddr2];
-			color2->r = (c2 >> 8) & 0xff;
+			color2->r = c2 >> 8;
 			color2->g = c2 & 0xff;
 			c2 = tc16[taddr2 | 0x400];
-			color2->b = (c2 >>  8) & 0xff;
+			color2->b = c2 >>  8;
 			color2->a = c2 & 0xff;
 			c3 = tc16[taddr3];
-			color3->r = (c3 >> 8) & 0xff;
+			color3->r = c3 >> 8;
 			color3->g = c3 & 0xff;
 			c3 = tc16[taddr3 | 0x400];
-			color3->b = (c3 >>  8) & 0xff;
+			color3->b = c3 >>  8;
 			color3->a = c3 & 0xff;
 		}
 		break;
@@ -3160,21 +3163,21 @@ INLINE void fetch_texel_quadro(COLOR *color0, COLOR *color1, COLOR *color2, COLO
 			taddr3 &= 0xfff;
 			ands = s0 & 1;
 			p = TMEM[taddr0];
-			p = (ands) ? (p & 0xf) : ((p >> 4) & 0xf);
+			p = (ands) ? (p & 0xf) : (p >> 4);
 			p = (tpal << 4) | p;
 			color0->r = color0->g = color0->b = color0->a = p;
 			p = TMEM[taddr2];
-			p = (ands) ? (p & 0xf) : ((p >> 4) & 0xf);
+			p = (ands) ? (p & 0xf) : (p >> 4);
 			p = (tpal << 4) | p;
 			color2->r = color2->g = color2->b = color2->a = p;
 
 			ands = s1 & 1;
 			p = TMEM[taddr1];
-			p = (ands) ? (p & 0xf) : ((p >> 4) & 0xf);
+			p = (ands) ? (p & 0xf) : (p >> 4);
 			p = (tpal << 4) | p;
 			color1->r = color1->g = color1->b = color1->a = p;
 			p = TMEM[taddr3];
-			p = (ands) ? (p & 0xf) : ((p >> 4) & 0xf);
+			p = (ands) ? (p & 0xf) : (p >> 4);
 			p = (tpal << 4) | p;
 			color3->r = color3->g = color3->b = color3->a = p;
 		}
@@ -3662,7 +3665,7 @@ INLINE void fetch_texel_entlut_quadro(COLOR *color0, COLOR *color1, COLOR *color
 {
 	UINT32 tbase0 = tile[tilenum].line * t0 + tile[tilenum].tmem;
 	UINT32 tbase2 = tile[tilenum].line * t1 + tile[tilenum].tmem;
-	UINT32 tpal	= tile[tilenum].palette;
+	UINT32 tpal	= tile[tilenum].palette << 4;
 	UINT32 xort = 0, ands = 0;
 
 	UINT16 *tc16 = (UINT16*)TMEM;
@@ -3690,19 +3693,19 @@ INLINE void fetch_texel_entlut_quadro(COLOR *color0, COLOR *color1, COLOR *color
 															
 			ands = s0 & 1;
 			c0 = TMEM[taddr0 & 0x7ff];
-			c0 = (ands) ? (c0 & 0xf) : ((c0 >> 4) & 0xf);
-			c0 = tlut[(((tpal << 4) | c0) << 2) ^ WORD_ADDR_XOR];
+			c0 = (ands) ? (c0 & 0xf) : (c0 >> 4);
+			c0 = tlut[((tpal | c0) << 2) ^ WORD_ADDR_XOR];
 			c2 = TMEM[taddr2 & 0x7ff];
-			c2 = (ands) ? (c2 & 0xf) : ((c2 >> 4) & 0xf);
-			c2 = tlut[(((tpal << 4) | c2) << 2) ^ WORD_ADDR_XOR];
+			c2 = (ands) ? (c2 & 0xf) : (c2 >> 4);
+			c2 = tlut[((tpal | c2) << 2) ^ WORD_ADDR_XOR];
 
 			ands = s1 & 1;
 			c1 = TMEM[taddr1 & 0x7ff];
-			c1 = (ands) ? (c1 & 0xf) : ((c1 >> 4) & 0xf);
-			c1 = tlut[(((tpal << 4) | c1) << 2) ^ WORD_ADDR_XOR];
+			c1 = (ands) ? (c1 & 0xf) : (c1 >> 4);
+			c1 = tlut[((tpal | c1) << 2) ^ WORD_ADDR_XOR];
 			c3 = TMEM[taddr3 & 0x7ff];
-			c3 = (ands) ? (c3 & 0xf) : ((c3 >> 4) & 0xf);
-			c3 = tlut[(((tpal << 4) | c3) << 2) ^ WORD_ADDR_XOR];
+			c3 = (ands) ? (c3 & 0xf) : (c3 >> 4);
+			c3 = tlut[((tpal | c3) << 2) ^ WORD_ADDR_XOR];
 		}
 		break;
 	case 3:
@@ -3720,19 +3723,19 @@ INLINE void fetch_texel_entlut_quadro(COLOR *color0, COLOR *color1, COLOR *color
 															
 			ands = s0 & 1;
 			c0 = TMEM[taddr0 & 0x7ff];
-			c0 = (ands) ? (c0 & 0xf) : ((c0 >> 4) & 0xf);
-			c0 = tlut[(((tpal << 4) | c0) << 2) ^ WORD_ADDR_XOR];
+			c0 = (ands) ? (c0 & 0xf) : (c0 >> 4);
+			c0 = tlut[((tpal | c0) << 2) ^ WORD_ADDR_XOR];
 			c2 = TMEM[taddr2 & 0x7ff];
-			c2 = (ands) ? (c2 & 0xf) : ((c2 >> 4) & 0xf);
-			c2 = tlut[(((tpal << 4) | c2) << 2) ^ WORD_ADDR_XOR];
+			c2 = (ands) ? (c2 & 0xf) : (c2 >> 4);
+			c2 = tlut[((tpal | c2) << 2) ^ WORD_ADDR_XOR];
 
 			ands = s1 & 1;
 			c1 = TMEM[taddr1 & 0x7ff];
-			c1 = (ands) ? (c1 & 0xf) : ((c1 >> 4) & 0xf);
-			c1 = tlut[(((tpal << 4) | c1) << 2) ^ WORD_ADDR_XOR];
+			c1 = (ands) ? (c1 & 0xf) : (c1 >> 4);
+			c1 = tlut[((tpal | c1) << 2) ^ WORD_ADDR_XOR];
 			c3 = TMEM[taddr3 & 0x7ff];
-			c3 = (ands) ? (c3 & 0xf) : ((c3 >> 4) & 0xf);
-			c3 = tlut[(((tpal << 4) | c3) << 2) ^ WORD_ADDR_XOR];
+			c3 = (ands) ? (c3 & 0xf) : (c3 >> 4);
+			c3 = tlut[((tpal | c3) << 2) ^ WORD_ADDR_XOR];
 		}
 		break;
 	case 4:
@@ -3777,13 +3780,13 @@ INLINE void fetch_texel_entlut_quadro(COLOR *color0, COLOR *color1, COLOR *color
 			taddr3 ^= xort;
 					
 			c0 = tc16[taddr0 & 0x3ff];
-			c0 = tlut[((c0 >> 8) << 2) ^ WORD_ADDR_XOR];
+			c0 = tlut[((c0 & ~3) >> 6) ^ WORD_ADDR_XOR];
 			c1 = tc16[taddr1 & 0x3ff];
-			c1 = tlut[((c1 >> 8) << 2) ^ WORD_ADDR_XOR];
+			c1 = tlut[((c1 & ~3) >> 6) ^ WORD_ADDR_XOR];
 			c2 = tc16[taddr2 & 0x3ff];
-			c2 = tlut[((c2 >> 8) << 2) ^ WORD_ADDR_XOR];
+			c2 = tlut[((c2 & ~3) >> 6) ^ WORD_ADDR_XOR];
 			c3 = tc16[taddr3 & 0x3ff];
-			c3 = tlut[((c3 >> 8) << 2) ^ WORD_ADDR_XOR];
+			c3 = tlut[((c3 & ~3) >> 6) ^ WORD_ADDR_XOR];
 		}
 		break;
 	case 11:
@@ -3825,13 +3828,13 @@ INLINE void fetch_texel_entlut_quadro(COLOR *color0, COLOR *color1, COLOR *color
 			taddr3 ^= xort;
 								
 			c0 = tc16[taddr0 & 0x3ff];
-			c0 = tlut[((c0 >> 8) << 2) ^ WORD_ADDR_XOR];
+			c0 = tlut[((c0 & ~3) >> 6) ^ WORD_ADDR_XOR];
 			c1 = tc16[taddr1 & 0x3ff];
-			c1 = tlut[((c1 >> 8) << 2) ^ WORD_ADDR_XOR];
+			c1 = tlut[((c1 & ~3) >> 6) ^ WORD_ADDR_XOR];
 			c2 = tc16[taddr2 & 0x3ff];
-			c2 = tlut[((c2 >> 8) << 2) ^ WORD_ADDR_XOR];
+			c2 = tlut[((c2 & ~3) >> 6) ^ WORD_ADDR_XOR];
 			c3 = tc16[taddr3 & 0x3ff];
-			c3 = tlut[((c3 >> 8) << 2) ^ WORD_ADDR_XOR];
+			c3 = tlut[((c3 & ~3) >> 6) ^ WORD_ADDR_XOR];
 		}
 		break;
 	case 15:
@@ -3883,13 +3886,13 @@ INLINE void fetch_texel_entlut_quadro(COLOR *color0, COLOR *color1, COLOR *color
 	}
 	else
 	{
-		color0->r = color0->g = color0->b = (c0 >> 8) & 0xff;
+		color0->r = color0->g = color0->b = c0 >> 8;
 		color0->a = c0 & 0xff;
-		color1->r = color1->g = color1->b = (c1 >> 8) & 0xff;
+		color1->r = color1->g = color1->b = c1 >> 8;
 		color1->a = c1 & 0xff;
-		color2->r = color2->g = color2->b = (c2 >> 8) & 0xff;
+		color2->r = color2->g = color2->b = c2 >> 8;
 		color2->a = c2 & 0xff;
-		color3->r = color3->g = color3->b = (c3 >> 8) & 0xff;
+		color3->r = color3->g = color3->b = c3 >> 8;
 		color3->a = c3 & 0xff;
 	}
 }
@@ -6087,6 +6090,7 @@ void loading_pipeline(int start, int end, int tilenum, int coord_quad, int ltlut
 			case 1:
 				readval0 = (UINT32)(((loadqword >> 48) << 16) | ((loadqword >> 16) & 0xffff));
 				readval1 = (UINT32)((((loadqword >> 32) & 0xffff) << 16) | (loadqword & 0xffff));
+
 				if (bit3fl)
 				{
 					tmem16[tmemidx2 ^ WORD_ADDR_XOR] = (UINT16)(readval0 >> 16);
@@ -7401,6 +7405,22 @@ static void rdp_sync_full(UINT32 w1, UINT32 w2)
 	
 
 	
+	
+	
+	
+	
+	
+	
+	if (rdp_cmd_cur != (rdp_cmd_ptr - 2))
+	{
+		rdp_pipeline_crashed = 1;
+		if (!onetimewarnings.syncfullcrash)
+		{
+			stricterror("Executing SyncFull when it is not the last command before DPC_END_REG seems to crash the RDP without the possibility of recovery.");
+			onetimewarnings.syncfullcrash = 1;
+			return;
+		}
+	}
 
 	z64gl_command = 0;
 
@@ -7895,6 +7915,7 @@ void rdp_process_list(void)
 	
 
 	
+
 	
 	if (dp_current & 7)
 	{
@@ -8024,8 +8045,8 @@ STRICTINLINE INT32 alpha_combiner_equation(INT32 a, INT32 b, INT32 c, INT32 d)
 
 STRICTINLINE void blender_equation_cycle0(int* r, int* g, int* b, int bsel_special)
 {
-	INT32 blend1a, blend2a;
-	UINT32 sum;
+	int blend1a, blend2a;
+	int blr, blg, blb, sum;
 	blend1a = *blender1b_a[0] >> 3;
 	blend2a = *blender2b_a[0] >> 3;
 
@@ -8040,9 +8061,11 @@ STRICTINLINE void blender_equation_cycle0(int* r, int* g, int* b, int bsel_speci
 	}
 	
 	mulb = blend2a + 1;
-	*r = (((*blender1a_r[0]) * blend1a + (*blender2a_r[0]) * mulb) >> 2) & 0x7ff;
-	*g = (((*blender1a_g[0]) * blend1a + (*blender2a_g[0]) * mulb) >> 2) & 0x7ff;
-	*b = (((*blender1a_b[0]) * blend1a + (*blender2a_b[0]) * mulb) >> 2) & 0x7ff;
+
+	
+	blr = (*blender1a_r[0]) * blend1a + (*blender2a_r[0]) * mulb;
+	blg = (*blender1a_g[0]) * blend1a + (*blender2a_g[0]) * mulb;
+	blb = (*blender1a_b[0]) * blend1a + (*blender2a_b[0]) * mulb;
 	
 	
 
@@ -8054,21 +8077,21 @@ STRICTINLINE void blender_equation_cycle0(int* r, int* g, int* b, int bsel_speci
 		
 		
 		sum = ((blend1a & ~3) + (blend2a & ~3) + 4) << 9;
-		*r = bldiv_hwaccurate_table[sum | (*r)];
-		*g = bldiv_hwaccurate_table[sum | (*g)];
-		*b = bldiv_hwaccurate_table[sum | (*b)];
+		*r = bldiv_hwaccurate_table[sum | ((blr >> 2) & 0x7ff)];
+		*g = bldiv_hwaccurate_table[sum | ((blg >> 2) & 0x7ff)];
+		*b = bldiv_hwaccurate_table[sum | ((blb >> 2) & 0x7ff)];
 	}
 	else
 	{
-		*r >>= 3;	
-		*g >>= 3; 
-		*b >>= 3;
+		*r = (blr >> 5) & 0xff;	
+		*g = (blg >> 5) & 0xff; 
+		*b = (blb >> 5) & 0xff;
 	}	
 }
 
 STRICTINLINE void blender_equation_cycle0_2(int* r, int* g, int* b, int bsel_special)
 {
-	INT32 blend1a, blend2a;
+	int blend1a, blend2a;
 	blend1a = *blender1b_a[0] >> 3;
 	blend2a = *blender2b_a[0] >> 3;
 
@@ -8086,8 +8109,8 @@ STRICTINLINE void blender_equation_cycle0_2(int* r, int* g, int* b, int bsel_spe
 
 STRICTINLINE void blender_equation_cycle1(int* r, int* g, int* b, int bsel_special)
 {
-	INT32 blend1a, blend2a;
-	UINT32 sum;
+	int blend1a, blend2a;
+	int blr, blg, blb, sum;
 	blend1a = *blender1b_a[1] >> 3;
 	blend2a = *blender2b_a[1] >> 3;
 
@@ -8099,24 +8122,22 @@ STRICTINLINE void blender_equation_cycle1(int* r, int* g, int* b, int bsel_speci
 	}
 	
 	mulb = blend2a + 1;
-	*r = (((*blender1a_r[1]) * blend1a + (*blender2a_r[1]) * mulb) >> 2) & 0x7ff;
-	*g = (((*blender1a_g[1]) * blend1a + (*blender2a_g[1]) * mulb) >> 2) & 0x7ff;
-	*b = (((*blender1a_b[1]) * blend1a + (*blender2a_b[1]) * mulb) >> 2) & 0x7ff;
+	blr = (*blender1a_r[1]) * blend1a + (*blender2a_r[1]) * mulb;
+	blg = (*blender1a_g[1]) * blend1a + (*blender2a_g[1]) * mulb;
+	blb = (*blender1a_b[1]) * blend1a + (*blender2a_b[1]) * mulb;
 
 	if (!other_modes.force_blend)
 	{
-		
-		
 		sum = ((blend1a & ~3) + (blend2a & ~3) + 4) << 9;
-		*r = bldiv_hwaccurate_table[sum | (*r)];
-		*g = bldiv_hwaccurate_table[sum | (*g)];
-		*b = bldiv_hwaccurate_table[sum | (*b)];
+		*r = bldiv_hwaccurate_table[sum | ((blr >> 2) & 0x7ff)];
+		*g = bldiv_hwaccurate_table[sum | ((blg >> 2) & 0x7ff)];
+		*b = bldiv_hwaccurate_table[sum | ((blb >> 2) & 0x7ff)];
 	}
 	else
 	{
-		*r >>= 3;	
-		*g >>= 3; 
-		*b >>= 3;
+		*r = (blr >> 5) & 0xff;	
+		*g = (blg >> 5) & 0xff; 
+		*b = (blb >> 5) & 0xff;
 	}
 }
 
