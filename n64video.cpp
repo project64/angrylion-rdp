@@ -361,7 +361,7 @@ COLOR pre_memory_color;
 
 UINT32 fill_color;		
 
-UINT16 primitive_z;
+UINT32 primitive_z;
 UINT16 primitive_delta_z;
 
 static int fb_format = FORMAT_RGBA;
@@ -506,8 +506,7 @@ INLINE void get_dither_noise_complete(int x, int y, int* cdith, int* adith);
 INLINE void get_dither_only(int x, int y, int* cdith, int* adith);
 INLINE void get_dither_nothing(int x, int y, int* cdith, int* adith);
 STRICTINLINE void vi_vl_lerp(CCVG* up, CCVG down, UINT32 frac);
-STRICTINLINE void rgbaz_clipper(int r, int g, int b, int a, int *z);
-STRICTINLINE void rgbaz_correct_tris(INT32 offx, INT32 offy, INT32* r, INT32* g, INT32* b, INT32* a, INT32* z);
+STRICTINLINE void rgbaz_correct_clip(int offx, int offy, int r, int g, int b, int a, int* z);
 STRICTINLINE void vi_fetch_filter16(CCVG* res, UINT32 fboffset, UINT32 cur_x, UINT32 fsaa, UINT32 dither_filter, UINT32 vres);
 STRICTINLINE void vi_fetch_filter32(CCVG* res, UINT32 fboffset, UINT32 cur_x, UINT32 fsaa, UINT32 dither_filter, UINT32 vres);
 int IsBadPtrW32(void *ptr, UINT32 bytes);
@@ -1550,7 +1549,7 @@ int rdp_update()
 							r = g = b = 0xff;
 #endif
 						adjust_brightness(&r, &g, &b, slowbright);
-						d[i] = ((r & 0xff) << 16) | ((g & 0xff) << 8) | (b & 0xff);
+						d[i] = (r << 16) | (g << 8) | b;
 						x_start += x_add;
 
 					}
@@ -4537,11 +4536,10 @@ void render_spans_1cycle_complete(int start, int end, int tilenum, int flip)
 	int news, newt;
 
 	int i, j;
-
-	int dzpix = other_modes.z_source_sel ? primitive_delta_z : spans_dzpix;
-	int dzpixenc = dz_compress(dzpix & 0xffff);
+	
 	int drinc, dginc, dbinc, dainc, dzinc, dsinc, dtinc, dwinc;
 	int xinc;
+
 	if (flip)
 	{
 		drinc = spans_dr;
@@ -4566,8 +4564,16 @@ void render_spans_1cycle_complete(int start, int end, int tilenum, int flip)
 		dwinc = -spans_dw;
 		xinc = -1;
 	}
-	if (other_modes.z_source_sel)
+
+	int dzpix;
+	if (!other_modes.z_source_sel)
+		dzpix = spans_dzpix;
+	else
+	{
+		dzpix = primitive_delta_z;
 		dzinc = spans_cdz = spans_dzdy = 0;
+	}
+	int dzpixenc = dz_compress(dzpix);
 
 	int cdith = 7, adith = 0;
 	int r, g, b, a, z, s, t, w;
@@ -4591,7 +4597,7 @@ void render_spans_1cycle_complete(int start, int end, int tilenum, int flip)
 		g = span[i].g;
 		b = span[i].b;
 		a = span[i].a;
-		z = other_modes.z_source_sel ? (((UINT32)primitive_z) << 16) : span[i].z;
+		z = other_modes.z_source_sel ? primitive_z : span[i].z;
 		s = span[i].s;
 		t = span[i].t;
 		w = span[i].w;
@@ -4687,8 +4693,7 @@ void render_spans_1cycle_complete(int start, int end, int tilenum, int flip)
 			
 			texture_pipeline_cycle(&texel1_color, &texel1_color, news, newt, newtile, 0);
 
-			rgbaz_correct_tris(offx, offy, &sr, &sg, &sb, &sa, &sz);
-			rgbaz_clipper(sr, sg, sb, sa, &sz);
+			rgbaz_correct_clip(offx, offy, sr, sg, sb, sa, &sz);
 
 			get_dither_noise_ptr(x, i, &cdith, &adith);
 			combiner_1cycle(adith);
@@ -4736,8 +4741,6 @@ void render_spans_1cycle_notexel1(int start, int end, int tilenum, int flip)
 
 	int i, j;
 
-	int dzpix = other_modes.z_source_sel ? primitive_delta_z : spans_dzpix;
-	int dzpixenc = dz_compress(dzpix & 0xffff);
 	int drinc, dginc, dbinc, dainc, dzinc, dsinc, dtinc, dwinc;
 	int xinc;
 	if (flip)
@@ -4764,8 +4767,16 @@ void render_spans_1cycle_notexel1(int start, int end, int tilenum, int flip)
 		dwinc = -spans_dw;
 		xinc = -1;
 	}
-	if (other_modes.z_source_sel)
+
+	int dzpix;
+	if (!other_modes.z_source_sel)
+		dzpix = spans_dzpix;
+	else
+	{
+		dzpix = primitive_delta_z;
 		dzinc = spans_cdz = spans_dzdy = 0;
+	}
+	int dzpixenc = dz_compress(dzpix);
 
 	int cdith = 7, adith = 0;
 	int r, g, b, a, z, s, t, w;
@@ -4788,7 +4799,7 @@ void render_spans_1cycle_notexel1(int start, int end, int tilenum, int flip)
 		g = span[i].g;
 		b = span[i].b;
 		a = span[i].a;
-		z = other_modes.z_source_sel ? (((UINT32)primitive_z) << 16) : span[i].z;
+		z = other_modes.z_source_sel ? primitive_z : span[i].z;
 		s = span[i].s;
 		t = span[i].t;
 		w = span[i].w;
@@ -4848,8 +4859,7 @@ void render_spans_1cycle_notexel1(int start, int end, int tilenum, int flip)
 
 			texture_pipeline_cycle(&texel0_color, &texel0_color, sss, sst, tile1, 0);
 
-			rgbaz_correct_tris(offx, offy, &sr, &sg, &sb, &sa, &sz);
-			rgbaz_clipper(sr, sg, sb, sa, &sz);
+			rgbaz_correct_clip(offx, offy, sr, sg, sb, sa, &sz);
 
 			get_dither_noise_ptr(x, i, &cdith, &adith);
 			combiner_1cycle(adith);
@@ -4893,8 +4903,6 @@ void render_spans_1cycle_notex(int start, int end, int tilenum, int flip)
 
 	int i, j;
 
-	int dzpix = other_modes.z_source_sel ? primitive_delta_z : spans_dzpix;
-	int dzpixenc = dz_compress(dzpix & 0xffff);
 	int drinc, dginc, dbinc, dainc, dzinc;
 	int xinc;
 	if (flip)
@@ -4915,8 +4923,16 @@ void render_spans_1cycle_notex(int start, int end, int tilenum, int flip)
 		dzinc = -spans_dz;
 		xinc = -1;
 	}
-	if (other_modes.z_source_sel)
+	
+	int dzpix;
+	if (!other_modes.z_source_sel)
+		dzpix = spans_dzpix;
+	else
+	{
+		dzpix = primitive_delta_z;
 		dzinc = spans_cdz = spans_dzdy = 0;
+	}
+	int dzpixenc = dz_compress(dzpix);
 
 	int cdith = 7, adith = 0;
 	int r, g, b, a, z;
@@ -4938,7 +4954,7 @@ void render_spans_1cycle_notex(int start, int end, int tilenum, int flip)
 		g = span[i].g;
 		b = span[i].b;
 		a = span[i].a;
-		z = other_modes.z_source_sel ? (((UINT32)primitive_z) << 16) : span[i].z;
+		z = other_modes.z_source_sel ? primitive_z : span[i].z;
 
 		x = xendsc;
 		curpixel = fb_width * i + x;
@@ -4977,8 +4993,7 @@ void render_spans_1cycle_notex(int start, int end, int tilenum, int flip)
 
 			lookup_cvmask_derivatives(cvgbuf[x], &offx, &offy);
 
-			rgbaz_correct_tris(offx, offy, &sr, &sg, &sb, &sa, &sz);
-			rgbaz_clipper(sr, sg, sb, sa, &sz);
+			rgbaz_correct_clip(offx, offy, sr, sg, sb, sa, &sz);
 
 			get_dither_noise_ptr(x, i, &cdith, &adith);
 			combiner_1cycle(adith);
@@ -5030,8 +5045,6 @@ void render_spans_2cycle_complete(int start, int end, int tilenum, int flip)
 
 	int i, j;
 
-	int dzpix = other_modes.z_source_sel ? primitive_delta_z : spans_dzpix;
-	int dzpixenc = dz_compress(dzpix & 0xffff);
 	int drinc, dginc, dbinc, dainc, dzinc, dsinc, dtinc, dwinc;
 	int xinc;
 	if (flip)
@@ -5059,8 +5072,15 @@ void render_spans_2cycle_complete(int start, int end, int tilenum, int flip)
 		xinc = -1;
 	}
 
-	if (other_modes.z_source_sel)
+	int dzpix;
+	if (!other_modes.z_source_sel)
+		dzpix = spans_dzpix;
+	else
+	{
+		dzpix = primitive_delta_z;
 		dzinc = spans_cdz = spans_dzdy = 0;
+	}
+	int dzpixenc = dz_compress(dzpix);
 
 	int cdith = 7, adith = 0;
 	int r, g, b, a, z, s, t, w;
@@ -5084,7 +5104,7 @@ void render_spans_2cycle_complete(int start, int end, int tilenum, int flip)
 		g = span[i].g;
 		b = span[i].b;
 		a = span[i].a;
-		z = other_modes.z_source_sel ? (((UINT32)primitive_z) << 16) : span[i].z;
+		z = other_modes.z_source_sel ? primitive_z : span[i].z;
 		s = span[i].s;
 		t = span[i].t;
 		w = span[i].w;
@@ -5173,8 +5193,7 @@ void render_spans_2cycle_complete(int start, int end, int tilenum, int flip)
 			texture_pipeline_cycle(&nexttexel_color, &nexttexel_color, news, newt, newtile1, 0);
 			texture_pipeline_cycle(&nexttexel1_color, &nexttexel_color, news, newt, newtile2, 1);
 
-			rgbaz_correct_tris(offx, offy, &sr, &sg, &sb, &sa, &sz);
-			rgbaz_clipper(sr, sg, sb, sa, &sz);
+			rgbaz_correct_clip(offx, offy, sr, sg, sb, sa, &sz);
 					
 			get_dither_noise_ptr(x, i, &cdith, &adith);
 			combiner_2cycle(adith);
@@ -5239,8 +5258,6 @@ void render_spans_2cycle_notexelnext(int start, int end, int tilenum, int flip)
 
 	int i, j;
 
-	int dzpix = other_modes.z_source_sel ? primitive_delta_z : spans_dzpix;
-	int dzpixenc = dz_compress(dzpix & 0xffff);
 	int drinc, dginc, dbinc, dainc, dzinc, dsinc, dtinc, dwinc;
 	int xinc;
 	if (flip)
@@ -5268,8 +5285,15 @@ void render_spans_2cycle_notexelnext(int start, int end, int tilenum, int flip)
 		xinc = -1;
 	}
 
-	if (other_modes.z_source_sel)
+	int dzpix;
+	if (!other_modes.z_source_sel)
+		dzpix = spans_dzpix;
+	else
+	{
+		dzpix = primitive_delta_z;
 		dzinc = spans_cdz = spans_dzdy = 0;
+	}
+	int dzpixenc = dz_compress(dzpix);
 
 	int cdith = 7, adith = 0;
 	int r, g, b, a, z, s, t, w;
@@ -5293,7 +5317,7 @@ void render_spans_2cycle_notexelnext(int start, int end, int tilenum, int flip)
 		g = span[i].g;
 		b = span[i].b;
 		a = span[i].a;
-		z = other_modes.z_source_sel ? (((UINT32)primitive_z) << 16) : span[i].z;
+		z = other_modes.z_source_sel ? primitive_z : span[i].z;
 		s = span[i].s;
 		t = span[i].t;
 		w = span[i].w;
@@ -5348,8 +5372,7 @@ void render_spans_2cycle_notexelnext(int start, int end, int tilenum, int flip)
 			texture_pipeline_cycle(&texel0_color, &texel0_color, sss, sst, tile1, 0);
 			texture_pipeline_cycle(&texel1_color, &texel0_color, sss, sst, tile2, 1);
 
-			rgbaz_correct_tris(offx, offy, &sr, &sg, &sb, &sa, &sz);
-			rgbaz_clipper(sr, sg, sb, sa, &sz);
+			rgbaz_correct_clip(offx, offy, sr, sg, sb, sa, &sz);
 					
 			get_dither_noise_ptr(x, i, &cdith, &adith);
 			combiner_2cycle(adith);
@@ -5400,8 +5423,6 @@ void render_spans_2cycle_notexel1(int start, int end, int tilenum, int flip)
 
 	int i, j;
 
-	int dzpix = other_modes.z_source_sel ? primitive_delta_z : spans_dzpix;
-	int dzpixenc = dz_compress(dzpix & 0xffff);
 	int drinc, dginc, dbinc, dainc, dzinc, dsinc, dtinc, dwinc;
 	int xinc;
 	if (flip)
@@ -5429,8 +5450,15 @@ void render_spans_2cycle_notexel1(int start, int end, int tilenum, int flip)
 		xinc = -1;
 	}
 
-	if (other_modes.z_source_sel)
+	int dzpix;
+	if (!other_modes.z_source_sel)
+		dzpix = spans_dzpix;
+	else
+	{
+		dzpix = primitive_delta_z;
 		dzinc = spans_cdz = spans_dzdy = 0;
+	}
+	int dzpixenc = dz_compress(dzpix);
 
 	int cdith = 7, adith = 0;
 	int r, g, b, a, z, s, t, w;
@@ -5454,7 +5482,7 @@ void render_spans_2cycle_notexel1(int start, int end, int tilenum, int flip)
 		g = span[i].g;
 		b = span[i].b;
 		a = span[i].a;
-		z = other_modes.z_source_sel ? (((UINT32)primitive_z) << 16) : span[i].z;
+		z = other_modes.z_source_sel ? primitive_z : span[i].z;
 		s = span[i].s;
 		t = span[i].t;
 		w = span[i].w;
@@ -5509,8 +5537,7 @@ void render_spans_2cycle_notexel1(int start, int end, int tilenum, int flip)
 			
 			texture_pipeline_cycle(&texel0_color, &texel0_color, sss, sst, tile1, 0);
 
-			rgbaz_correct_tris(offx, offy, &sr, &sg, &sb, &sa, &sz);
-			rgbaz_clipper(sr, sg, sb, sa, &sz);
+			rgbaz_correct_clip(offx, offy, sr, sg, sb, sa, &sz);
 					
 			get_dither_noise_ptr(x, i, &cdith, &adith);
 			combiner_2cycle(adith);
@@ -5557,8 +5584,6 @@ void render_spans_2cycle_notex(int start, int end, int tilenum, int flip)
 	UINT8 offx = 0, offy = 0;
 	int i, j;
 
-	int dzpix = other_modes.z_source_sel ? primitive_delta_z : spans_dzpix;
-	int dzpixenc = dz_compress(dzpix & 0xffff);
 	int drinc, dginc, dbinc, dainc, dzinc;
 	int xinc;
 	if (flip)
@@ -5580,8 +5605,15 @@ void render_spans_2cycle_notex(int start, int end, int tilenum, int flip)
 		xinc = -1;
 	}
 
-	if (other_modes.z_source_sel)
+	int dzpix;
+	if (!other_modes.z_source_sel)
+		dzpix = spans_dzpix;
+	else
+	{
+		dzpix = primitive_delta_z;
 		dzinc = spans_cdz = spans_dzdy = 0;
+	}
+	int dzpixenc = dz_compress(dzpix);
 
 	int cdith = 7, adith = 0;
 	int r, g, b, a, z;
@@ -5604,7 +5636,7 @@ void render_spans_2cycle_notex(int start, int end, int tilenum, int flip)
 		g = span[i].g;
 		b = span[i].b;
 		a = span[i].a;
-		z = other_modes.z_source_sel ? (((UINT32)primitive_z) << 16) : span[i].z;
+		z = other_modes.z_source_sel ? primitive_z : span[i].z;
 
 		x = xendsc;
 		curpixel = fb_width * i + x;
@@ -5643,8 +5675,7 @@ void render_spans_2cycle_notex(int start, int end, int tilenum, int flip)
 
 			lookup_cvmask_derivatives(cvgbuf[x], &offx, &offy);
 
-			rgbaz_correct_tris(offx, offy, &sr, &sg, &sb, &sa, &sz);
-			rgbaz_clipper(sr, sg, sb, sa, &sz);
+			rgbaz_correct_clip(offx, offy, sr, sg, sb, sa, &sz);
 					
 			get_dither_noise_ptr(x, i, &cdith, &adith);
 			combiner_2cycle(adith);
@@ -7468,7 +7499,9 @@ static void rdp_set_scissor(UINT32 w1, UINT32 w2)
 
 static void rdp_set_prim_depth(UINT32 w1, UINT32 w2)
 {
-	primitive_z = (UINT16)(w2 >> 16) & 0x7fff;
+	primitive_z = w2 & (0x7fff << 16);
+	
+
 	primitive_delta_z = (UINT16)(w2);
 }
 
@@ -8291,7 +8324,7 @@ INLINE void fbwrite_16(UINT32 curpixel, UINT32 r, UINT32 g, UINT32 b)
 
 	if (fb_format == FORMAT_RGBA)
 	{
-		finalcolor = ((r >> 3) << 11) | ((g >> 3) << 6) | ((b >> 3) << 1);
+		finalcolor = ((r & ~7) << 8) | ((g & ~7) << 3) | ((b & ~7) >> 2);
 	}
 	else
 	{
@@ -9306,11 +9339,11 @@ STRICTINLINE void video_max_optimized(UINT32* Pixels, UINT32* pen)
 {
 	int i;
 	int pos = 0;
-	UINT32 curpen;
-	UINT32 max = 0;
-	for (i = 0; i < 7; i++)
+	UINT32 curpen = Pixels[0];
+	UINT32 max;
+	for (i = 1; i < 7; i++)
 	{
-	    if (Pixels[i] >= Pixels[pos])
+	    if (Pixels[i] > Pixels[pos])
 		{
 			curpen = Pixels[pos];
 			pos = i;			
@@ -9321,13 +9354,15 @@ STRICTINLINE void video_max_optimized(UINT32* Pixels, UINT32* pen)
 	{
 		for (i = pos + 1; i < 7; i++)
 		{
-			if (Pixels[i] >= curpen)
+			if (Pixels[i] > curpen)
 			{
 				curpen = Pixels[i];
 			}
 		}
 	}
 	*pen = curpen;
+
+	
 }
 
 
@@ -9586,64 +9621,56 @@ STRICTINLINE void vi_vl_lerp(CCVG* up, CCVG down, UINT32 frac)
 
 }
 
-STRICTINLINE void rgbaz_clipper(int sr, int sg, int sb, int sa, int *sz)
+STRICTINLINE void rgbaz_correct_clip(int offx, int offy, int r, int g, int b, int a, int* z)
 {
+	int summand_r, summand_b, summand_g, summand_a;
+	int summand_z;
+	int sz = *z;
 	int zanded;
-	
-	shade_color.r = special_9bit_clamptable[sr & 0x1ff];
-	shade_color.g = special_9bit_clamptable[sg & 0x1ff];
-	shade_color.b = special_9bit_clamptable[sb & 0x1ff];
-	shade_color.a = special_9bit_clamptable[sa & 0x1ff];
-	
-	
-	
-	zanded = (*sz) & 0x60000;
 
-	
-	zanded >>= 17;
-	switch(zanded)
+
+
+
+	if (curpixel_cvg == 8)
 	{
-		case 0: *sz &= 0x3ffff;											break;
-		case 1:	*sz &= 0x3ffff;											break;
-		case 2: *sz = 0x3ffff;											break;
-		case 3: *sz = 0;												break;
-	}
-}
-
-STRICTINLINE void rgbaz_correct_tris(INT32 offx, INT32 offy, INT32* r, INT32* g, INT32* b, INT32* a, INT32* z)
-{
-
-
-	INT32 summand_xr, summand_yr, summand_xb, summand_yb, summand_xg, summand_yg, summand_xa, summand_ya;
-	INT32 summand_xz, summand_yz;
-	
-	if (curpixel_cvg != 8)
-	{
-		summand_xr = offx * spans_cdr;
-		summand_yr = offy * spans_drdy;
-		summand_xg = offx * spans_cdg;
-		summand_yg = offy * spans_dgdy;
-		summand_xb = offx * spans_cdb;
-		summand_yb = offy * spans_dbdy;
-		summand_xa = offx * spans_cda;
-		summand_ya = offy * spans_dady;
-	
-		summand_xz = offx * spans_cdz;
-		summand_yz = offy * spans_dzdy;
-
-		*r = ((*r << 2) + summand_xr + summand_yr) >> 4;
-		*g = ((*g << 2) + summand_xg + summand_yg) >> 4;
-		*b = ((*b << 2) + summand_xb + summand_yb) >> 4;
-		*a = ((*a << 2) + summand_xa + summand_ya) >> 4;
-		*z = (((*z << 2) + summand_xz + summand_yz) >> 5) & 0x7ffff;
+		r >>= 2;
+		g >>= 2;
+		b >>= 2;
+		a >>= 2;
+		sz = sz >> 3;
 	}
 	else
 	{
-		*r >>= 2;
-		*g >>= 2;
-		*b >>= 2;
-		*a >>= 2;
-		*z = (*z >> 3) & 0x7ffff;
+		summand_r = offx * spans_cdr + offy * spans_drdy;
+		summand_g = offx * spans_cdg + offy * spans_dgdy;
+		summand_b = offx * spans_cdb + offy * spans_dbdy;
+		summand_a = offx * spans_cda + offy * spans_dady;
+		summand_z = offx * spans_cdz + offy * spans_dzdy;
+
+		r = ((r << 2) + summand_r) >> 4;
+		g = ((g << 2) + summand_g) >> 4;
+		b = ((b << 2) + summand_b) >> 4;
+		a = ((a << 2) + summand_a) >> 4;
+		sz = ((sz << 2) + summand_z) >> 5;
+	}
+
+	
+	shade_color.r = special_9bit_clamptable[r & 0x1ff];
+	shade_color.g = special_9bit_clamptable[g & 0x1ff];
+	shade_color.b = special_9bit_clamptable[b & 0x1ff];
+	shade_color.a = special_9bit_clamptable[a & 0x1ff];
+	
+	
+	
+	zanded = (sz & 0x60000) >> 17;
+
+	
+	switch(zanded)
+	{
+		case 0: *z = sz & 0x3ffff;						break;
+		case 1:	*z = sz & 0x3ffff;						break;
+		case 2: *z = 0x3ffff;							break;
+		case 3: *z = 0;									break;
 	}
 }
 
