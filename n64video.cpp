@@ -8301,7 +8301,7 @@ INLINE void fbwrite_16(UINT32 curpixel, UINT32 r, UINT32 g, UINT32 b)
 
 	
 	RWRITEIDX16(fb, finalcolor|(finalcvg >> 2));
-	HWRITEADDR8(hb, finalcvg);
+	HWRITEADDR8(hb, finalcvg & 3);
 }
 
 INLINE void fbwrite_32(UINT32 curpixel, UINT32 r, UINT32 g, UINT32 b)
