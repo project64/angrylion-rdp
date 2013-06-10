@@ -160,6 +160,7 @@ typedef struct
 {
 	int clampdiffs, clampdifft;
 	int clampens, clampent;
+	int masksclamped, masktclamped;
 } FAKETILE;
 
 typedef struct
@@ -313,12 +314,14 @@ COLOR shade_color;
 COLOR key_scale;
 COLOR key_center;
 COLOR key_width;
-COLOR noise_color;
+static INT32 noise = 0;
+static INT32 primitive_lod_frac = 0;
+static INT32 one_color = 0x100;
+static INT32 zero_color = 0x00;
+
 INT32 keyalpha;
 
-static COLOR one_color		= {0x100, 0x100, 0x100, 0x100};
-static INT32 blenderone		= 0xff;
-static COLOR zero_color		= {0x00, 0x00, 0x00, 0x00};
+static INT32 blenderone	= 0xff;
 
 
 static INT32 *combiner_rgbsub_a_r[2];
@@ -496,7 +499,7 @@ STRICTINLINE void get_texel1_1cycle(INT32* s1, INT32* t1, INT32 s, INT32 t, INT3
 STRICTINLINE void get_nexttexel0_2cycle(INT32* s1, INT32* t1, INT32 s, INT32 t, INT32 w, INT32 dsinc, INT32 dtinc, INT32 dwinc);
 STRICTINLINE void video_max_optimized(UINT32* Pixels, UINT32* pen);
 INLINE void calculate_clamp_diffs(UINT32 tile);
-INLINE void calculate_clamp_enables(UINT32 tile);
+INLINE void calculate_tile_derivs(UINT32 tile);
 INLINE void rgb_dither_complete(int* r, int* g, int* b, int dith);
 INLINE void rgb_dither_nothing(int* r, int* g, int* b, int dith);
 INLINE void get_dither_noise_complete(int x, int y, int* cdith, int* adith);
@@ -527,7 +530,6 @@ int getdebugcolor(void);
 void bytefill_tmem(char byte);
 
 static INT32 k0 = 0, k1 = 0, k2 = 0, k3 = 0, k4 = 0, k5 = 0;
-static INT32 primitive_lod_frac = 0;
 static INT32 lod_frac = 0;
 UINT32 DebugMode = 0, DebugMode2 = 0;
 int debugcolor = 0;
@@ -640,8 +642,9 @@ CVtcmaskDERIVATIVE cvarray[0x100];
 #define RWRITEIDX32(in, val)	{if ((in) <= idxlim32) rdram[(in)] = (val);}
 
 
-#define HREADADDR8(in)			(((in) <= 0x3fffff) ? (hidden_bits[(in) ^ BYTE_ADDR_XOR]) : 0)
-#define HWRITEADDR8(in, val)	{if ((in) <= 0x3fffff) hidden_bits[(in) ^ BYTE_ADDR_XOR] = (val);}
+
+#define HREADADDR8(in)			(((in) <= 0x3fffff) ? (hidden_bits[(in)]) : 0)
+#define HWRITEADDR8(in, val)	{if ((in) <= 0x3fffff) hidden_bits[(in)] = (val);}
 
 struct onetime
 {
@@ -677,10 +680,9 @@ STRICTINLINE void tcmask(INT32* S, INT32* T, INT32 num)
 	{
 		if (tile[num].ms)
 		{
-			wrap = *S >> (tile[num].mask_s <= 10 ? tile[num].mask_s : 10);
+			wrap = *S >> tile[num].f.masksclamped;
 			wrap &= 1;
-			if (wrap)
-				*S = (~(*S));
+			*S ^= (-wrap);
 		}
 		*S &= maskbits_table[tile[num].mask_s];
 	}
@@ -689,10 +691,9 @@ STRICTINLINE void tcmask(INT32* S, INT32* T, INT32 num)
 	{
 		if (tile[num].mt)
 		{
-			wrap = *T >> (tile[num].mask_t <= 10 ? tile[num].mask_t : 10);
+			wrap = *T >> tile[num].f.masktclamped;
 			wrap &= 1;
-			if (wrap)
-				*T = (~(*T));
+			*T ^= (-wrap);
 		}
 		
 		*T &= maskbits_table[tile[num].mask_t];
@@ -712,15 +713,13 @@ STRICTINLINE void tcmask_coupled(INT32* S, INT32* S1, INT32* T, INT32* T1, INT32
 	{
 		if (tile[num].ms)
 		{
-			wrapthreshold = tile[num].mask_s <= 10 ? tile[num].mask_s : 10;
+			wrapthreshold = tile[num].f.masksclamped;
 
 			wrap = (*S >> wrapthreshold) & 1;
-			if (wrap)
-				*S = (~(*S));
+			*S ^= (-wrap);
 
 			wrap = (*S1 >> wrapthreshold) & 1;
-			if (wrap)
-				*S1 = (~(*S1));
+			*S1 ^= (-wrap);
 		}
 
 		maskbits = maskbits_table[tile[num].mask_s];
@@ -732,15 +731,13 @@ STRICTINLINE void tcmask_coupled(INT32* S, INT32* S1, INT32* T, INT32* T1, INT32
 	{
 		if (tile[num].mt)
 		{
-			wrapthreshold = tile[num].mask_t <= 10 ? tile[num].mask_t : 10;
+			wrapthreshold = tile[num].f.masktclamped;
 
 			wrap = (*T >> wrapthreshold) & 1;
-			if (wrap)
-				*T = (~(*T));
+			*T ^= (-wrap);
 
 			wrap = (*T1 >> wrapthreshold) & 1;
-			if (wrap)
-				*T1 = (~(*T1));
+			*T1 ^= (-wrap);
 		}
 		maskbits = maskbits_table[tile[num].mask_t];
 		*T &= maskbits;
@@ -760,23 +757,19 @@ STRICTINLINE void tcmask_copy(INT32* S, INT32* S1, INT32* S2, INT32* S3, INT32* 
 	{
 		if (tile[num].ms)
 		{
-			swrapthreshold = tile[num].mask_s <= 10 ? tile[num].mask_s : 10;
+			swrapthreshold = tile[num].f.masksclamped;
 
 			wrap = (*S >> swrapthreshold) & 1;
-			if (wrap)
-				*S = (~(*S));
+			*S ^= (-wrap);
 
 			wrap = (*S1 >> swrapthreshold) & 1;
-			if (wrap)
-				*S1 = (~(*S1));
+			*S1 ^= (-wrap);
 
 			wrap = (*S2 >> swrapthreshold) & 1;
-			if (wrap)
-				*S2 = (~(*S2));
+			*S2 ^= (-wrap);
 
 			wrap = (*S3 >> swrapthreshold) & 1;
-			if (wrap)
-				*S3 = (~(*S3));
+			*S3 ^= (-wrap);
 		}
 
 		maskbits_s = maskbits_table[tile[num].mask_s];
@@ -790,10 +783,9 @@ STRICTINLINE void tcmask_copy(INT32* S, INT32* S1, INT32* S2, INT32* S3, INT32* 
 	{
 		if (tile[num].mt)
 		{
-			wrap = *T >> (tile[num].mask_t <= 10 ? tile[num].mask_t : 10); 
+			wrap = *T >> tile[num].f.masktclamped; 
 			wrap &= 1;
-			if (wrap)
-				*T = (~(*T));
+			*T ^= (-wrap);
 		}
 
 		*T &= maskbits_table[tile[num].mask_t];
@@ -969,35 +961,43 @@ int rdp_init()
 	if (LOG_RDP_EXECUTION)
 		rdp_exec = fopen("rdp_execute.txt", "wt");
 
-	combiner_rgbsub_a_r[0] = combiner_rgbsub_a_r[1] = &one_color.r;
-	combiner_rgbsub_a_g[0] = combiner_rgbsub_a_g[1] = &one_color.g;
-	combiner_rgbsub_a_b[0] = combiner_rgbsub_a_b[1] = &one_color.b;
-	combiner_rgbsub_b_r[0] = combiner_rgbsub_b_r[1] = &one_color.r;
-	combiner_rgbsub_b_g[0] = combiner_rgbsub_b_g[1] = &one_color.g;
-	combiner_rgbsub_b_b[0] = combiner_rgbsub_b_b[1] = &one_color.b;
-	combiner_rgbmul_r[0] = combiner_rgbmul_r[1] = &one_color.r;
-	combiner_rgbmul_g[0] = combiner_rgbmul_g[1] = &one_color.g;
-	combiner_rgbmul_b[0] = combiner_rgbmul_b[1] = &one_color.b;
-	combiner_rgbadd_r[0] = combiner_rgbadd_r[1] = &one_color.r;
-	combiner_rgbadd_g[0] = combiner_rgbadd_g[1] = &one_color.g;
-	combiner_rgbadd_b[0] = combiner_rgbadd_b[1] = &one_color.b;
+	combiner_rgbsub_a_r[0] = combiner_rgbsub_a_r[1] = &one_color;
+	combiner_rgbsub_a_g[0] = combiner_rgbsub_a_g[1] = &one_color;
+	combiner_rgbsub_a_b[0] = combiner_rgbsub_a_b[1] = &one_color;
+	combiner_rgbsub_b_r[0] = combiner_rgbsub_b_r[1] = &one_color;
+	combiner_rgbsub_b_g[0] = combiner_rgbsub_b_g[1] = &one_color;
+	combiner_rgbsub_b_b[0] = combiner_rgbsub_b_b[1] = &one_color;
+	combiner_rgbmul_r[0] = combiner_rgbmul_r[1] = &one_color;
+	combiner_rgbmul_g[0] = combiner_rgbmul_g[1] = &one_color;
+	combiner_rgbmul_b[0] = combiner_rgbmul_b[1] = &one_color;
+	combiner_rgbadd_r[0] = combiner_rgbadd_r[1] = &one_color;
+	combiner_rgbadd_g[0] = combiner_rgbadd_g[1] = &one_color;
+	combiner_rgbadd_b[0] = combiner_rgbadd_b[1] = &one_color;
 
-	combiner_alphasub_a[0] = combiner_alphasub_a[1] = &one_color.a;
-	combiner_alphasub_b[0] = combiner_alphasub_b[1] = &one_color.a;
-	combiner_alphamul[0] = combiner_alphamul[1] = &one_color.a;
-	combiner_alphaadd[0] = combiner_alphaadd[1] = &one_color.a;
+	combiner_alphasub_a[0] = combiner_alphasub_a[1] = &one_color;
+	combiner_alphasub_b[0] = combiner_alphasub_b[1] = &one_color;
+	combiner_alphamul[0] = combiner_alphamul[1] = &one_color;
+	combiner_alphaadd[0] = combiner_alphaadd[1] = &one_color;
 
 	rdp_set_other_modes(0, 0);
 	other_modes.f.stalederivs = 1;
 	
 	memset(TMEM, 0, 0x1000);
 
-	memset(hidden_bits, 0xff, sizeof(hidden_bits));
+	memset(hidden_bits, 3, sizeof(hidden_bits));
 	
 	
 
 	memset(tile, 0, sizeof(tile));
 	
+	for (int i = 0; i < 8; i++)
+		tile[i].f.clampens = tile[i].f.clampent = 1;
+
+	memset(&combined_color, 0, sizeof(COLOR));
+	memset(&prim_color, 0, sizeof(COLOR));
+	memset(&env_color, 0, sizeof(COLOR));
+	memset(&key_scale, 0, sizeof(COLOR));
+	memset(&key_center, 0, sizeof(COLOR));
 
 	rdp_pipeline_crashed = 0;
 	memset(&onetimewarnings, 0, sizeof(onetimewarnings));
@@ -1610,7 +1610,7 @@ STRICTINLINE void vi_fetch_filter16(CCVG* res, UINT32 fboffset, UINT32 cur_x, UI
 	UINT32 pix = RREADIDX16(idx);
 	UINT32 cur_cvg;
 	if (fsaa)
-		cur_cvg = ((pix & 1) << 2) | (HREADADDR8(idx) & 3);
+		cur_cvg = ((pix & 1) << 2) | HREADADDR8(idx);
 	else
 		cur_cvg = 7;
 	r = GET_HI(pix);
@@ -1679,11 +1679,11 @@ INLINE void SET_SUBA_RGB_INPUT(INT32 **input_r, INT32 **input_g, INT32 **input_b
 		case 3:		*input_r = &prim_color.r;		*input_g = &prim_color.g;		*input_b = &prim_color.b;		break;
 		case 4:		*input_r = &shade_color.r;		*input_g = &shade_color.g;		*input_b = &shade_color.b;		break;
 		case 5:		*input_r = &env_color.r;		*input_g = &env_color.g;		*input_b = &env_color.b;		break;
-		case 6:		*input_r = &one_color.r;		*input_g = &one_color.g;		*input_b = &one_color.b;		break;
-		case 7:		*input_r = &noise_color.r;		*input_g = &noise_color.g;		*input_b = &noise_color.b;		break;
+		case 6:		*input_r = &one_color;			*input_g = &one_color;			*input_b = &one_color;		break;
+		case 7:		*input_r = &noise;				*input_g = &noise;				*input_b = &noise;				break;
 		case 8: case 9: case 10: case 11: case 12: case 13: case 14: case 15:
 		{
-			*input_r = &zero_color.r;		*input_g = &zero_color.g;		*input_b = &zero_color.b;		break;
+			*input_r = &zero_color;		*input_g = &zero_color;		*input_b = &zero_color;		break;
 		}
 	}
 }
@@ -1702,7 +1702,7 @@ INLINE void SET_SUBB_RGB_INPUT(INT32 **input_r, INT32 **input_g, INT32 **input_b
 		case 7:		*input_r = &k4;					*input_g = &k4;					*input_b = &k4;					break;
 		case 8: case 9: case 10: case 11: case 12: case 13: case 14: case 15:
 		{
-			*input_r = &zero_color.r;		*input_g = &zero_color.g;		*input_b = &zero_color.b;		break;
+			*input_r = &zero_color;		*input_g = &zero_color;		*input_b = &zero_color;		break;
 		}
 	}
 }
@@ -1730,7 +1730,7 @@ INLINE void SET_MUL_RGB_INPUT(INT32 **input_r, INT32 **input_g, INT32 **input_b,
 		case 16: case 17: case 18: case 19: case 20: case 21: case 22: case 23:
 		case 24: case 25: case 26: case 27: case 28: case 29: case 30: case 31:
 		{
-			*input_r = &zero_color.r;		*input_g = &zero_color.g;		*input_b = &zero_color.b;		break;
+			*input_r = &zero_color;		*input_g = &zero_color;		*input_b = &zero_color;		break;
 		}
 	}
 }
@@ -1745,8 +1745,8 @@ INLINE void SET_ADD_RGB_INPUT(INT32 **input_r, INT32 **input_g, INT32 **input_b,
 		case 3:		*input_r = &prim_color.r;		*input_g = &prim_color.g;		*input_b = &prim_color.b;		break;
 		case 4:		*input_r = &shade_color.r;		*input_g = &shade_color.g;		*input_b = &shade_color.b;		break;
 		case 5:		*input_r = &env_color.r;		*input_g = &env_color.g;		*input_b = &env_color.b;		break;
-		case 6:		*input_r = &one_color.r;		*input_g = &one_color.g;		*input_b = &one_color.b;		break;
-		case 7:		*input_r = &zero_color.r;		*input_g = &zero_color.g;		*input_b = &zero_color.b;		break;
+		case 6:		*input_r = &one_color;			*input_g = &one_color;			*input_b = &one_color;			break;
+		case 7:		*input_r = &zero_color;			*input_g = &zero_color;			*input_b = &zero_color;			break;
 	}
 }
 
@@ -1760,8 +1760,8 @@ INLINE void SET_SUB_ALPHA_INPUT(INT32 **input, int code)
 		case 3:		*input = &prim_color.a; break;
 		case 4:		*input = &shade_color.a; break;
 		case 5:		*input = &env_color.a; break;
-		case 6:		*input = &one_color.a; break;
-		case 7:		*input = &zero_color.a; break;
+		case 6:		*input = &one_color; break;
+		case 7:		*input = &zero_color; break;
 	}
 }
 
@@ -1776,7 +1776,7 @@ INLINE void SET_MUL_ALPHA_INPUT(INT32 **input, int code)
 		case 4:		*input = &shade_color.a; break;
 		case 5:		*input = &env_color.a; break;
 		case 6:		*input = &primitive_lod_frac; break;
-		case 7:		*input = &zero_color.a; break;
+		case 7:		*input = &zero_color; break;
 	}
 }
 
@@ -2204,7 +2204,7 @@ INLINE void SET_BLENDER_INPUT(int cycle, int which, INT32 **input_r, INT32 **inp
 			case 0:		*input_a = &pixel_color.a; break;
 			case 1:		*input_a = &fog_color.a; break;
 			case 2:		*input_a = &shade_color.a; break;
-			case 3:		*input_a = &zero_color.a; break;
+			case 3:		*input_a = &zero_color; break;
 		}
 	}
 	else
@@ -2214,7 +2214,7 @@ INLINE void SET_BLENDER_INPUT(int cycle, int which, INT32 **input_r, INT32 **inp
 			case 0:		*input_a = &inv_pixel_color.a; break;
 			case 1:		*input_a = &memory_color.a; break;
 			case 2:		*input_a = &blenderone; break;
-			case 3:		*input_a = &zero_color.a; break;
+			case 3:		*input_a = &zero_color; break;
 		}
 	}
 }
@@ -7594,8 +7594,8 @@ void deduce_derivatives()
 		(other_modes.cycle_type == CYCLE_TYPE_1 && lod_frac_used_in_cc1))
 		lodfracused = 1;
 
-	if ((other_modes.cycle_type == CYCLE_TYPE_1 && combiner_rgbsub_a_r[1] == &noise_color.r) || \
-		(other_modes.cycle_type == CYCLE_TYPE_2 && (combiner_rgbsub_a_r[0] == &noise_color.r || combiner_rgbsub_a_r[1] == &noise_color.r)) || \
+	if ((other_modes.cycle_type == CYCLE_TYPE_1 && combiner_rgbsub_a_r[1] == &noise) || \
+		(other_modes.cycle_type == CYCLE_TYPE_2 && (combiner_rgbsub_a_r[0] == &noise || combiner_rgbsub_a_r[1] == &noise)) || \
 		other_modes.alpha_dither_sel == 2)
 		get_dither_noise_ptr = get_dither_noise_func[0];
 	else if (rgb_alpha_dither != 0xf)
@@ -7716,7 +7716,7 @@ static void rdp_set_tile(UINT32 w1, UINT32 w2)
 	tile[tilenum].mask_s	= (w2 >>  4) & 0xf;
 	tile[tilenum].shift_s	= (w2 >>  0) & 0xf;
 
-	calculate_clamp_enables(tilenum);
+	calculate_tile_derivs(tilenum);
 }
 
 static void rdp_fill_rect(UINT32 w1, UINT32 w2)
@@ -8024,20 +8024,25 @@ INLINE int alpha_compare(INT32 comb_alpha)
 
 STRICTINLINE INT32 color_combiner_equation(INT32 a, INT32 b, INT32 c, INT32 d)
 {
-	a = special_9bit_exttable[a & 0x1ff];
-	b = special_9bit_exttable[b & 0x1ff];
+
+
+
+
+
+	a = special_9bit_exttable[a];
+	b = special_9bit_exttable[b];
 	c = SIGN(c, 9);
-	d = special_9bit_exttable[d & 0x1ff];
+	d = special_9bit_exttable[d];
 	a = ((a - b) * c) + (d << 8) + 0x80;
 	return (a & 0x1ffff);
 }
 
 STRICTINLINE INT32 alpha_combiner_equation(INT32 a, INT32 b, INT32 c, INT32 d)
 {
-	a = special_9bit_exttable[a & 0x1ff];
-	b = special_9bit_exttable[b & 0x1ff];
+	a = special_9bit_exttable[a];
+	b = special_9bit_exttable[b];
 	c = SIGN(c, 9);
-	d = special_9bit_exttable[d & 0x1ff];
+	d = special_9bit_exttable[d];
 	a = (((a - b) * c) + (d << 8) + 0x80) >> 8;
 	return (a & 0x1ff);
 }
@@ -8294,8 +8299,9 @@ INLINE void fbwrite_16(UINT32 curpixel, UINT32 r, UINT32 g, UINT32 b)
 		finalcvg = 0;
 	}
 
-	RWRITEIDX16(fb, finalcolor|((finalcvg >> 2) & 1));
-	HWRITEADDR8(hb, finalcvg & 3);
+	
+	RWRITEIDX16(fb, finalcolor|(finalcvg >> 2));
+	HWRITEADDR8(hb, finalcvg);
 }
 
 INLINE void fbwrite_32(UINT32 curpixel, UINT32 r, UINT32 g, UINT32 b)
@@ -8393,7 +8399,7 @@ INLINE void fbread_16(UINT32 curpixel)
 		memory_color.r = GET_HI(fword);
 		memory_color.g = GET_MED(fword);
 		memory_color.b = GET_LOW(fword);
-		lowbits = ((fword & 1) << 2) | (hbyte & 3);
+		lowbits = ((fword & 1) << 2) | hbyte;
 	}
 	else
 	{
@@ -8424,7 +8430,7 @@ INLINE void fbread2_16(UINT32 curpixel)
 		pre_memory_color.r = GET_HI(fword);
 		pre_memory_color.g = GET_MED(fword);
 		pre_memory_color.b = GET_LOW(fword);
-		lowbits = ((fword & 1) << 2) | (hbyte & 3);
+		lowbits = ((fword & 1) << 2) | hbyte;
 	}
 	else
 	{
@@ -8738,7 +8744,7 @@ INLINE UINT32 z_compare(UINT32 zcurpixel, UINT32 dzcurpixel, UINT32 sz, UINT16 d
 	{
 		zval = RREADIDX16(zcurpixel);
 		oz = z_decompress(zval);		
-		rawdzmem = ((zval & 3) << 2) | (HREADADDR8(dzcurpixel) & 3);
+		rawdzmem = ((zval & 3) << 2) | HREADADDR8(dzcurpixel);
 		dzmem = dz_decompress(rawdzmem);
 
 		
@@ -8950,7 +8956,7 @@ STRICTINLINE void video_filter16(int* endr, int* endg, int* endb, UINT32 fboffse
 
 #define VI_ANDER(x) {													\
 			pix = RREADIDX16(x);										\
-			hidval = HREADADDR8(x) & 3;									\
+			hidval = HREADADDR8(x);									\
 			if (hidval == 3 && (pix & 1))								\
 			{															\
 				backr[numoffull] = GET_HI(pix);							\
@@ -9332,10 +9338,12 @@ INLINE void calculate_clamp_diffs(UINT32 i)
 }
 
 
-INLINE void calculate_clamp_enables(UINT32 i)
+INLINE void calculate_tile_derivs(UINT32 i)
 {
 	tile[i].f.clampens = tile[i].cs || !tile[i].mask_s;
 	tile[i].f.clampent = tile[i].ct || !tile[i].mask_t;
+	tile[i].f.masksclamped = tile[i].mask_s <= 10 ? tile[i].mask_s : 10;
+	tile[i].f.masktclamped = tile[i].mask_t <= 10 ? tile[i].mask_t : 10;
 }
 
 INLINE void rgb_dither_complete(int* r, int* g, int* b, int dith)
@@ -9392,7 +9400,9 @@ INLINE void get_dither_noise_complete(int x, int y, int* cdith, int* adith)
 {
 
 	
-	noise_color.r = noise_color.g = noise_color.b = ((irand() & 7) << 6) | 0x20;
+	noise = ((irand() & 7) << 6) | 0x20;
+	
+	
 	int dithindex; 
 	switch(rgb_alpha_dither)
 	{
@@ -9408,7 +9418,7 @@ INLINE void get_dither_noise_complete(int x, int y, int* cdith, int* adith)
 	case 2:
 		dithindex = ((y & 3) << 2) | (x & 3);
 		*cdith = magic_matrix[dithindex];
-		*adith = (noise_color.r >> 6) & 7;
+		*adith = (noise >> 6) & 7;
 		break;
 	case 3:
 		dithindex = ((y & 3) << 2) | (x & 3);
@@ -9427,7 +9437,7 @@ INLINE void get_dither_noise_complete(int x, int y, int* cdith, int* adith)
 	case 6:
 		dithindex = ((y & 3) << 2) | (x & 3);
 		*cdith = bayer_matrix[dithindex];
-		*adith = (noise_color.r >> 6) & 7;
+		*adith = (noise >> 6) & 7;
 		break;
 	case 7:
 		dithindex = ((y & 3) << 2) | (x & 3);
@@ -9446,7 +9456,7 @@ INLINE void get_dither_noise_complete(int x, int y, int* cdith, int* adith)
 		break;
 	case 10:
 		*cdith = irand() & 7;
-		*adith = (noise_color.r >> 6) & 7;
+		*adith = (noise >> 6) & 7;
 		break;
 	case 11:
 		*cdith = irand() & 7;
@@ -9464,7 +9474,7 @@ INLINE void get_dither_noise_complete(int x, int y, int* cdith, int* adith)
 		break;
 	case 14:
 		*cdith = 7;
-		*adith = (noise_color.r >> 6) & 7;
+		*adith = (noise >> 6) & 7;
 		break;
 	case 15:
 		*cdith = 7;
@@ -9491,7 +9501,7 @@ INLINE void get_dither_only(int x, int y, int* cdith, int* adith)
 	case 2:
 		dithindex = ((y & 3) << 2) | (x & 3);
 		*cdith = magic_matrix[dithindex];
-		*adith = (noise_color.r >> 6) & 7;
+		*adith = (noise >> 6) & 7;
 		break;
 	case 3:
 		dithindex = ((y & 3) << 2) | (x & 3);
@@ -9510,7 +9520,7 @@ INLINE void get_dither_only(int x, int y, int* cdith, int* adith)
 	case 6:
 		dithindex = ((y & 3) << 2) | (x & 3);
 		*cdith = bayer_matrix[dithindex];
-		*adith = (noise_color.r >> 6) & 7;
+		*adith = (noise >> 6) & 7;
 		break;
 	case 7:
 		dithindex = ((y & 3) << 2) | (x & 3);
@@ -9529,7 +9539,7 @@ INLINE void get_dither_only(int x, int y, int* cdith, int* adith)
 		break;
 	case 10:
 		*cdith = irand() & 7;
-		*adith = (noise_color.r >> 6) & 7;
+		*adith = (noise >> 6) & 7;
 		break;
 	case 11:
 		*cdith = irand() & 7;
@@ -9547,7 +9557,7 @@ INLINE void get_dither_only(int x, int y, int* cdith, int* adith)
 		break;
 	case 14:
 		*cdith = 7;
-		*adith = (noise_color.r >> 6) & 7;
+		*adith = (noise >> 6) & 7;
 		break;
 	case 15:
 		*cdith = 7;
