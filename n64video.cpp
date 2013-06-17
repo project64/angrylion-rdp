@@ -664,7 +664,7 @@ CVtcmaskDERIVATIVE cvarray[0x100];
 
 struct onetime
 {
-	int ntscnolerp, copymstrangecrashes, fillmcrashes, fillmbitcrashes, dpcurunaligned, syncfullcrash;
+	int ntscnolerp, copymstrangecrashes, fillmcrashes, fillmbitcrashes, syncfullcrash;
 } onetimewarnings;
 
 extern INT32 pitchindwords;
@@ -5211,6 +5211,7 @@ void render_spans_2cycle_complete(int start, int end, int tilenum, int flip)
 			
 			
 			
+			
 			if (z_compare(zbcur, sz, dzpix, dzpixenc))
 			{
 				if (blender_2cycle(&fir, &fig, &fib, cdith))
@@ -6323,24 +6324,42 @@ static void edgewalker_for_prims(INT32* ewdata)
 
 	if (do_offset)
 	{
-		dsdeh = dsde >> 9;	dsdyh = dsdy >> 9;
-		dtdeh = dtde >> 9;	dtdyh = dtdy >> 9;
-		dwdeh = dwde >> 9;	dwdyh = dwdy >> 9;
-		drdeh = drde >> 9;	drdyh = drdy >> 9;
-		dgdeh = dgde >> 9;	dgdyh = dgdy >> 9;
-		dbdeh = dbde >> 9;	dbdyh = dbdy >> 9;
-		dadeh = dade >> 9;	dadyh = dady >> 9;
-		dzdeh = dzde >> 9;	dzdyh = dzdy >> 9;
+		dsdeh = dsde & ~0x1ff;
+		dtdeh = dtde & ~0x1ff;	
+		dwdeh = dwde & ~0x1ff;	
+		drdeh = drde & ~0x1ff;	
+		dgdeh = dgde & ~0x1ff;	
+		dbdeh = dbde & ~0x1ff;	
+		dadeh = dade & ~0x1ff;	
+		dzdeh = dzde & ~0x1ff;
+
+		dsdyh = dsdy & ~0x1ff;
+		dtdyh = dtdy & ~0x1ff;
+		dwdyh = dwdy & ~0x1ff;
+		drdyh = drdy & ~0x1ff;
+		dgdyh = dgdy & ~0x1ff;
+		dbdyh = dbdy & ~0x1ff;
+		dadyh = dady & ~0x1ff;
+		dzdyh = dzdy & ~0x1ff;
+
 
 		
-		dsdiff = (dsdeh << 8) + (dsdeh << 7) - (dsdyh << 8) - (dsdyh << 7);
-		dtdiff = (dtdeh << 8) + (dtdeh << 7) - (dtdyh << 8) - (dtdyh << 7);
-		dwdiff = (dwdeh << 8) + (dwdeh << 7) - (dwdyh << 8) - (dwdyh << 7);
-		drdiff = (drdeh << 8) + (drdeh << 7) - (drdyh << 8) - (drdyh << 7);
-		dgdiff = (dgdeh << 8) + (dgdeh << 7) - (dgdyh << 8) - (dgdyh << 7);
-		dbdiff = (dbdeh << 8) + (dbdeh << 7) - (dbdyh << 8) - (dbdyh << 7);
-		dadiff = (dadeh << 8) + (dadeh << 7) - (dadyh << 8) - (dadyh << 7);
-		dzdiff = (dzdeh << 8) + (dzdeh << 7) - (dzdyh << 8) - (dzdyh << 7);
+		dsdiff = dsdeh - dsdyh;
+		dsdiff -= (dsdiff >> 2);
+		dtdiff = dtdeh - dtdyh;
+		dtdiff -= (dtdiff >> 2);
+		dwdiff = dwdeh - dwdyh;
+		dwdiff -= (dwdiff >> 2);
+		drdiff = drdeh - drdyh;
+		drdiff -= (drdiff >> 2);
+		dgdiff = dgdeh - dgdyh;
+		dgdiff -= (dgdiff >> 2);
+		dbdiff = dbdeh - dbdyh;
+		dbdiff -= (dbdiff >> 2);
+		dadiff = dadeh - dadyh;
+		dadiff -= (dadiff >> 2);
+		dzdiff = dzdeh - dzdyh;
+		dzdiff -= (dzdiff >> 2);
 	}
 	else
 		dsdiff = dtdiff = dwdiff = drdiff = dgdiff = dbdiff = dadiff = dzdiff = 0;
@@ -6781,19 +6800,6 @@ static void edgewalker_for_loads(INT32* lewdata)
 	loading_pipeline(yhlimit >> 2, yllimit >> 2, tilenum, coord_quad, ltlut);
 }
 
-
-
-INLINE UINT32 READ_RDP_DATA(UINT32 address)
-{
-	if (dp_status & DP_STATUS_XBUS_DMA)		
-	{
-		return rsp_dmem[(address & 0xfff) >> 2];
-	}
-	else
-	{
-		return RREADIDX32((address & 0xffffff) >> 2);
-	}
-}
 
 static const char *const image_format[] = { "RGBA", "YUV", "CI", "IA", "I", "???", "???", "???" };
 static const char *const image_size[] = { "4-bit", "8-bit", "16-bit", "32-bit" };
@@ -7437,7 +7443,7 @@ static void rdp_sync_full(UINT32 w1, UINT32 w2)
 	
 	
 	
-	if (rdp_cmd_cur != (rdp_cmd_ptr - 2))
+	if (((rdp_cmd_ptr - rdp_cmd_cur) & ~1) != 2)
 	{
 		rdp_pipeline_crashed = 1;
 		if (!onetimewarnings.syncfullcrash)
@@ -7915,6 +7921,7 @@ void rdp_process_list(void)
 {
 	int i, length;
 	UINT32 cmd, cmd_length;
+	UINT32 dp_current_al = dp_current & ~7, dp_end_al = dp_end & ~7; 
 
 	dp_status &= ~DP_STATUS_FREEZE;
 	
@@ -7924,7 +7931,7 @@ void rdp_process_list(void)
 
 	
 
-	if (dp_end <= dp_current)
+	if (dp_end_al <= dp_current_al)
 	{
 		
 		
@@ -7935,64 +7942,51 @@ void rdp_process_list(void)
 		return;
 	}
 
-	length = dp_end - dp_current;
+	length = (dp_end_al - dp_current_al) >> 2;
 
 	ptr_onstart = rdp_cmd_ptr;
+
+	
+
+	
+	
 	
 	
 	
 
 	
-
-	
-	if (dp_current & 7)
-	{
-		rdp_pipeline_crashed = 1;
-		if (!onetimewarnings.dpcurunaligned)
-			stricterror("dp_current is not 64bit-aligned. The RDP has crashed.");
-		onetimewarnings.dpcurunaligned = 1;
-		dp_status |= (DP_STATUS_DMA_BUSY | DP_STATUS_CMD_BUSY);
-		
-		
-		
-		return;
-	}
-
-	
-	if ((rdp_cmd_ptr + (length >> 2)) & ~0xffff)
+	if ((rdp_cmd_ptr + length) & ~0xffff)
 		fatalerror("rdp_process_list: rdp_cmd_ptr overflow: length 0x%x ptr_onstart 0x%x", length, ptr_onstart);
 
-
 	
-	for (i = 0; i < length; i += 4)
+	dp_current_al >>= 2;
+
+	if (dp_status & DP_STATUS_XBUS_DMA)
 	{
-		rdp_cmd_data[rdp_cmd_ptr++] = READ_RDP_DATA(dp_current + i);
-		
-		
+		for (i = 0; i < length; i ++)
+		{
+			rdp_cmd_data[rdp_cmd_ptr] = rsp_dmem[dp_current_al & 0x3ff];
+			rdp_cmd_ptr++;
+			dp_current_al++;
+		}
 	}
-
-
-	
-	cmd = (rdp_cmd_data[0] >> 24) & 0x3f;
-	cmd_length = rdp_cmd_ptr << 2;
-
-	
-	if (cmd_length < rdp_command_length[cmd])
+	else
 	{
-		
-		
-		
-		dp_start = dp_current = dp_end;
-		
-		
-		return;
+		for (i = 0; i < length; i ++)
+		{
+			rdp_cmd_data[rdp_cmd_ptr] = RREADIDX32(dp_current_al & 0x3fffff);
+			rdp_cmd_ptr++;
+			dp_current_al++;
+		}
 	}
+	
 
 	while (rdp_cmd_cur < rdp_cmd_ptr && !rdp_pipeline_crashed)
 	{
 		cmd = (rdp_cmd_data[rdp_cmd_cur] >> 24) & 0x3f;
 		cmd_length = rdp_command_length[cmd] >> 2;
 
+		
 		
 		if ((rdp_cmd_ptr - rdp_cmd_cur) < cmd_length)
 		{
@@ -8020,7 +8014,7 @@ void rdp_process_list(void)
 		
 
 		
-		rdp_command_table[cmd](rdp_cmd_data[rdp_cmd_cur+0], rdp_cmd_data[rdp_cmd_cur+1]);
+		rdp_command_table[cmd](rdp_cmd_data[rdp_cmd_cur+0], rdp_cmd_data[rdp_cmd_cur + 1]);
 		
 		rdp_cmd_cur += cmd_length;
 	};
