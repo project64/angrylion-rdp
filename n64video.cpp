@@ -9251,7 +9251,9 @@ STRICTINLINE void restore_filter32(int* r, int* g, int* b, UINT32 fboffset, UINT
 
 STRICTINLINE void gamma_filters(int* r, int* g, int* b, int gamma_and_dither)
 {
-	int dith;
+	int cdith, dith;
+	
+	
 
 	switch(gamma_and_dither)
 	{
@@ -9259,11 +9261,14 @@ STRICTINLINE void gamma_filters(int* r, int* g, int* b, int gamma_and_dither)
 		return;
 		break;
 	case 1:
-		dith = irand() & 1;
+		cdith = irand();
+		dith = cdith & 1;
 		if (*r < 255)
 			*r += dith;
+		dith = (cdith >> 1) & 1;
 		if (*g < 255)
 			*g += dith;
+		dith = (cdith >> 2) & 1;
 		if (*b < 255)
 			*b += dith;
 		break;
@@ -9273,9 +9278,12 @@ STRICTINLINE void gamma_filters(int* r, int* g, int* b, int gamma_and_dither)
 		*b = gamma_table[*b];
 		break;
 	case 3:
-		dith = irand() & 0x3f;
+		cdith = irand();
+		dith = cdith & 0x3f;
 		*r = gamma_dither_table[((*r) << 6)|dith];
+		dith = (cdith >> 6) & 0x3f;
 		*g = gamma_dither_table[((*g) << 6)|dith];
+		dith = ((cdith >> 9) & 0x38) | (cdith & 7);
 		*b = gamma_dither_table[((*b) << 6)|dith];
 		break;
 	}
