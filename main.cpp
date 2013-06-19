@@ -22,7 +22,7 @@ int rdp_init();
 int rdp_close();
 int rdp_update();
 void rdp_process_list(void);
-extern INLINE void stricterror(const char* err, ...);
+extern INLINE void popmessage(const char* err, ...);
 extern INLINE void fatalerror(const char* err, ...);
 
  
@@ -44,13 +44,13 @@ EXPORT void CALL CloseDLL (void)
  
 EXPORT void CALL DllAbout ( HWND hParent )
 {
-	stricterror("angrylion's RDP, unpublished beta. MESS source code used.");
+	popmessage("angrylion's RDP, unpublished beta. MESS source code used.");
 }
 
  
 EXPORT void CALL DllConfig ( HWND hParent )
 {
-	stricterror("Nothing to configure");
+	popmessage("Nothing to configure");
 }
 
  
@@ -102,6 +102,14 @@ EXPORT void CALL MoveScreen (int xpos, int ypos)
 	OffsetRect(&dst, p.x, p.y);
 	GetClientRect(gfx.hStatusBar, &statusrect);
 	dst.bottom -= statusrect.bottom;
+
+	
+	
+	
+	
+	
+	
+	
 }
 
  
@@ -109,7 +117,7 @@ EXPORT void CALL ProcessDList(void)
 {
 	if (!ProcessDListShown)
 	{
-		stricterror("ProcessDList");
+		popmessage("ProcessDList");
 		ProcessDListShown = 1;
 	}
 }
