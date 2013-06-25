@@ -4408,7 +4408,7 @@ STRICTINLINE void texture_pipeline_cycle(COLOR* TEX, COLOR* prev, INT32 SSS, INT
 			newk2 = SIGN(k2, 9); 
 			newk3 = SIGN(k3, 9);
 			invk0 = ~newk0; 
-			invk1 =~newk1; 
+			invk1 = ~newk1; 
 			invk2 = ~newk2; 
 			invk3 = ~newk3;
 			if (!other_modes.en_tlut)
@@ -4463,7 +4463,7 @@ STRICTINLINE void texture_pipeline_cycle(COLOR* TEX, COLOR* prev, INT32 SSS, INT
 			newk2 = SIGN(k2, 9); 
 			newk3 = SIGN(k3, 9);
 			invk0 = ~newk0; 
-			invk1 =~newk1; 
+			invk1 = ~newk1; 
 			invk2 = ~newk2; 
 			invk3 = ~newk3;
 			if (convert)
@@ -8730,8 +8730,8 @@ INLINE void precalc_cvmask_derivatives(void)
 
 STRICTINLINE UINT16 decompress_cvmask_frombyte(UINT8 x)
 {
-	UINT16 y = (x & 1) | ((x & 2) << 1) | ((x & 4) << 3) | ((x & 8) << 4) |
-		((x & 0x10) << 4) | ((x & 0x20) << 5) | ((x & 0x40) << 7) | ((x & 0x80) << 8);
+	UINT16 y = (x & 1) | ((x & 2) << 4) | (x & 4) | ((x & 8) << 4) |
+		((x & 0x10) << 4) | ((x & 0x20) << 8) | ((x & 0x40) << 4) | ((x & 0x80) << 8);
 	return y;
 }
 
