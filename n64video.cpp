@@ -7465,16 +7465,8 @@ static void rdp_sync_full(UINT32 w1, UINT32 w2)
 	
 	
 	
-	if (((rdp_cmd_ptr - rdp_cmd_cur) & ~1) != 2)
-	{
-		rdp_pipeline_crashed = 1;
-		if (!onetimewarnings.syncfullcrash)
-		{
-			popmessage("Executing SyncFull when it is not the last command before DPC_END_REG seems to crash the RDP without the possibility of recovery.");
-			onetimewarnings.syncfullcrash = 1;
-			return;
-		}
-	}
+	
+	
 
 	z64gl_command = 0;
 
