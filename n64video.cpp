@@ -623,36 +623,41 @@ INT32 clamp_t_diff[8];
 INT32 clamp_s_diff[8];
 CVtcmaskDERIVATIVE cvarray[0x100];
 
+#define RDRAM_MASK 0x00ffffff
 
 
-#define RREADADDR8(in) (((in) <= plim) ? (rdram_8[(in) ^ BYTE_ADDR_XOR]) : 0)
-#define RREADIDX16(in) (((in) <= idxlim16) ? (rdram_16[(in) ^ WORD_ADDR_XOR]) : 0)
-#define RREADIDX32(in) (((in) <= idxlim32) ? (rdram[(in)]) : 0)
+#define RREADADDR8(rdst, in) {(in) &= RDRAM_MASK; (rdst) = ((in) <= plim) ? (rdram_8[(in) ^ BYTE_ADDR_XOR]) : 0;}
+#define RREADIDX16(rdst, in) {(in) &= (RDRAM_MASK >> 1); (rdst) = ((in) <= idxlim16) ? (rdram_16[(in) ^ WORD_ADDR_XOR]) : 0;}
+#define RREADIDX32(rdst, in) {(in) &= (RDRAM_MASK >> 2); (rdst) = ((in) <= idxlim32) ? (rdram[(in)]) : 0;}
 
-#define RWRITEADDR8(in, val)	{if ((in) <= plim) rdram_8[(in) ^ BYTE_ADDR_XOR] = (val);}
-#define RWRITEIDX16(in, val)	{if ((in) <= idxlim16) rdram_16[(in) ^ WORD_ADDR_XOR] = (val);}
-#define RWRITEIDX32(in, val)	{if ((in) <= idxlim32) rdram[(in)] = (val);}
+#define RWRITEADDR8(in, val)	{(in) &= RDRAM_MASK; if ((in) <= plim) rdram_8[(in) ^ BYTE_ADDR_XOR] = (val);}
+#define RWRITEIDX16(in, val)	{(in) &= (RDRAM_MASK >> 1); if ((in) <= idxlim16) rdram_16[(in) ^ WORD_ADDR_XOR] = (val);}
+#define RWRITEIDX32(in, val)	{(in) &= (RDRAM_MASK >> 2); if ((in) <= idxlim32) rdram[(in)] = (val);}
 
 
 
 #define PAIRREAD16(rdst, hdst, in)		\
 {										\
+	(in) &= (RDRAM_MASK >> 1);			\
 	if ((in) <= idxlim16) {(rdst) = rdram_16[(in) ^ WORD_ADDR_XOR]; (hdst) = hidden_bits[(in)];}	\
 	else {(rdst) = (hdst) = 0;}			\
 }
 
 #define PAIRWRITE16(in, rval, hval)		\
 {										\
+	(in) &= (RDRAM_MASK >> 1);			\
 	if ((in) <= idxlim16) {rdram_16[(in) ^ WORD_ADDR_XOR] = (rval); hidden_bits[(in)] = (hval);}	\
 }
 
 #define PAIRWRITE32(in, rval, hval0, hval1)	\
 {											\
+	(in) &= (RDRAM_MASK >> 2);				\
 	if ((in) <= idxlim32) {rdram[(in)] = (rval); hidden_bits[(in) << 1] = (hval0); hidden_bits[((in) << 1) + 1] = (hval1);}	\
 }
 
 #define PAIRWRITE8(in, rval, hval)	\
 {									\
+	(in) &= RDRAM_MASK;				\
 	if ((in) <= plim) {rdram_8[(in) ^ BYTE_ADDR_XOR] = (rval); if ((in) & 1) hidden_bits[(in) >> 1] = (hval);}	\
 }
 
@@ -1653,7 +1658,8 @@ STRICTINLINE void vi_fetch_filter16(CCVG* res, UINT32 fboffset, UINT32 cur_x, UI
 STRICTINLINE void vi_fetch_filter32(CCVG* res, UINT32 fboffset, UINT32 cur_x, UINT32 fsaa, UINT32 dither_filter, UINT32 vres)
 {
 	int r, g, b;
-	UINT32 pix = RREADIDX32((fboffset >> 2) + cur_x);
+	UINT32 pix, addr = (fboffset >> 2) + cur_x;
+	RREADIDX32(pix, addr);
 	UINT32 cur_cvg;
 	if (fsaa)
 		cur_cvg = (pix >> 5) & 7;
@@ -6057,10 +6063,13 @@ void loading_pipeline(int start, int end, int tilenum, int coord_quad, int ltlut
 			get_tmem_idx(sss, sst, tilenum, &tmemidx0, &tmemidx1, &tmemidx2, &tmemidx3, &bit3fl, &hibit);
 
 			readidx32 = (tiptr >> 2) & ~1;
-			readval0 = RREADIDX32(readidx32);
-			readval1 = RREADIDX32(readidx32 + 1);
-			readval2 = RREADIDX32(readidx32 + 2);
-			readval3 = RREADIDX32(readidx32 + 3);
+			RREADIDX32(readval0, readidx32);
+			readidx32++;
+			RREADIDX32(readval1, readidx32);
+			readidx32++;
+			RREADIDX32(readval2, readidx32);
+			readidx32++;
+			RREADIDX32(readval3, readidx32);
 
 			
 			switch(tiptr & 7)
@@ -7988,7 +7997,7 @@ void rdp_process_list(void)
 	{
 		for (i = 0; i < length; i ++)
 		{
-			rdp_cmd_data[rdp_cmd_ptr] = RREADIDX32(dp_current_al & 0x3fffff);
+			RREADIDX32(rdp_cmd_data[rdp_cmd_ptr], dp_current_al);
 			rdp_cmd_ptr++;
 			dp_current_al++;
 		}
@@ -8402,7 +8411,9 @@ INLINE void fbread2_4(UINT32 curpixel, UINT32* curpixel_memcvg)
 
 INLINE void fbread_8(UINT32 curpixel, UINT32* curpixel_memcvg)
 {
-	UINT8 mem = RREADADDR8(fb_address + curpixel);
+	UINT8 mem;
+	UINT32 addr = fb_address + curpixel;
+	RREADADDR8(mem, addr);
 	memory_color.r = memory_color.g = memory_color.b = mem;
 	*curpixel_memcvg = 7;
 	memory_color.a = 0xe0;
@@ -8410,7 +8421,9 @@ INLINE void fbread_8(UINT32 curpixel, UINT32* curpixel_memcvg)
 
 INLINE void fbread2_8(UINT32 curpixel, UINT32* curpixel_memcvg)
 {
-	UINT8 mem = RREADADDR8(fb_address + curpixel);
+	UINT8 mem;
+	UINT32 addr = fb_address + curpixel;
+	RREADADDR8(mem, addr);
 	pre_memory_color.r = pre_memory_color.g = pre_memory_color.b = mem;
 	pre_memory_color.a = 0xe0;
 	*curpixel_memcvg = 7;
@@ -8485,7 +8498,8 @@ INLINE void fbread2_16(UINT32 curpixel, UINT32* curpixel_memcvg)
 
 INLINE void fbread_32(UINT32 curpixel, UINT32* curpixel_memcvg)
 {
-	UINT32 mem = RREADIDX32((fb_address >> 2) + curpixel);
+	UINT32 mem, addr = (fb_address >> 2) + curpixel;
+	RREADIDX32(mem, addr);
 	memory_color.r = (mem >> 24) & 0xff;
 	memory_color.g = (mem >> 16) & 0xff;
 	memory_color.b = (mem >> 8) & 0xff;
@@ -8503,7 +8517,8 @@ INLINE void fbread_32(UINT32 curpixel, UINT32* curpixel_memcvg)
 
 INLINE void fbread2_32(UINT32 curpixel, UINT32* curpixel_memcvg)
 {
-	UINT32 mem = RREADIDX32((fb_address >> 2) + curpixel);
+	UINT32 mem, addr = (fb_address >> 2) + curpixel; 
+	RREADIDX32(mem, addr);
 	pre_memory_color.r = (mem >> 24) & 0xff;
 	pre_memory_color.g = (mem >> 16) & 0xff;
 	pre_memory_color.b = (mem >> 8) & 0xff;
@@ -9075,7 +9090,7 @@ STRICTINLINE void video_filter32(int* endr, int* endg, int* endb, UINT32 fboffse
 	UINT32 rightdown = idx + hres + 1;
 
 #define VI_ANDER32(x) {													\
-			pix = RREADIDX32(x);										\
+			RREADIDX32(pix, (x));										\
 			pixcvg = (pix >> 5) & 7;									\
 			if (pixcvg == 7)											\
 			{															\
@@ -9193,11 +9208,13 @@ STRICTINLINE void restore_filter16(int* r, int* g, int* b, UINT32 fboffset, UINT
 
 	UINT32 tempr, tempg, tempb;
 	UINT16 pix;
+	UINT32 addr;
 
 
 #define VI_COMPARE(x)												\
 {																	\
-	pix = RREADIDX16((x));											\
+	addr = (x);														\
+	RREADIDX16(pix, addr);											\
 	tempr = (pix >> 6) & 0x3e0;										\
 	tempg = (pix >> 1) & 0x3e0;										\
 	tempb = (pix << 4) & 0x3e0;										\
@@ -9236,11 +9253,12 @@ STRICTINLINE void restore_filter32(int* r, int* g, int* b, UINT32 fboffset, UINT
 	UINT32 bcomp = (bend >> 3) & 0x1f;
 
 	UINT32 tempr, tempg, tempb;
-	UINT32 pix;
+	UINT32 pix, addr;
 
 #define VI_COMPARE32(x)													\
 {																		\
-	pix = RREADIDX32(x);												\
+	addr = (x);															\
+	RREADIDX32(pix, addr);												\
 	tempr = (pix >> 19) & 0x3e0;										\
 	tempg = (pix >> 11) & 0x3e0;										\
 	tempb = (pix >> 3) & 0x3e0;											\
@@ -11107,7 +11125,7 @@ void show_current_cfb(int isviorigin)
 					int r, g, b;
 					UINT16 pix;
 					
-					pix = RREADIDX16(fbidx16);
+					RREADIDX16(pix, fbidx16);
 					
 					r = GET_HI(pix);
 					g = GET_MED(pix);
@@ -11148,7 +11166,8 @@ void show_current_cfb(int isviorigin)
 				INT32* d = &PreScale[j * pitchindwords];
 				for (i = 0; i < hres; i++)
 				{
-					UINT32 pix = RREADIDX32(fbidx32);
+					UINT32 pix;
+					RREADIDX32(pix, fbidx32);
 					fbidx32++;
 					d[i] = pix >> 8;
 				}
