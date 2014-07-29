@@ -491,7 +491,7 @@ STRICTINLINE void tclod_2cycle_next(INT32* sss, INT32* sst, INT32 s, INT32 t, IN
 STRICTINLINE void tclod_copy(INT32* sss, INT32* sst, INT32 s, INT32 t, INT32 w, INT32 dsinc, INT32 dtinc, INT32 dwinc, INT32 prim_tile, INT32* t1);
 STRICTINLINE void get_texel1_1cycle(INT32* s1, INT32* t1, INT32 s, INT32 t, INT32 w, INT32 dsinc, INT32 dtinc, INT32 dwinc, INT32 scanline, SPANSIGS* sigs);
 STRICTINLINE void get_nexttexel0_2cycle(INT32* s1, INT32* t1, INT32 s, INT32 t, INT32 w, INT32 dsinc, INT32 dtinc, INT32 dwinc);
-STRICTINLINE void video_max_optimized(UINT32* Pixels, UINT32* pen);
+STRICTINLINE void video_max_optimized(UINT32* Pixels, UINT32* penumin, UINT32* penumax, int numofels);
 INLINE void calculate_clamp_diffs(UINT32 tile);
 INLINE void calculate_tile_derivs(UINT32 tile);
 INLINE void rgb_dither_complete(int* r, int* g, int* b, int dith);
@@ -8969,13 +8969,13 @@ STRICTINLINE void video_filter16(int* endr, int* endg, int* endb, UINT32 fboffse
 
 
 
+
 	UINT32 penumaxr, penumaxg, penumaxb, penuminr, penuming, penuminb;
 	UINT16 pix;
 	UINT32 numoffull = 1;
 	UINT32 hidval;
 	UINT32 r, g, b; 
 	UINT32 backr[7], backg[7], backb[7];
-	UINT32 invr[7], invg[7], invb[7];
 
 	r = *endr;
 	g = *endg;
@@ -8984,9 +8984,6 @@ STRICTINLINE void video_filter16(int* endr, int* endg, int* endb, UINT32 fboffse
 	backr[0] = r;
 	backg[0] = g;
 	backb[0] = b;
-	invr[0] = (~r) & 0xff;
-	invg[0] = (~g) & 0xff;
-	invb[0] = (~b) & 0xff;
 
 	
 	
@@ -9008,17 +9005,8 @@ STRICTINLINE void video_filter16(int* endr, int* endg, int* endb, UINT32 fboffse
 				backr[numoffull] = GET_HI(pix);							\
 				backg[numoffull] = GET_MED(pix);						\
 				backb[numoffull] = GET_LOW(pix);						\
-				invr[numoffull] = (~backr[numoffull]) & 0xff;			\
-				invg[numoffull] = (~backg[numoffull]) & 0xff;			\
-				invb[numoffull] = (~backb[numoffull]) & 0xff;			\
+				numoffull++;											\
 			}															\
-			else														\
-			{															\
-                backr[numoffull] = invr[numoffull] = 0;	\
-				backg[numoffull] = invg[numoffull] = 0;					\
-				backb[numoffull] = invb[numoffull] = 0;					\
-			}															\
-			numoffull++;												\
 }
 	
 	VI_ANDER(leftup);
@@ -9029,19 +9017,16 @@ STRICTINLINE void video_filter16(int* endr, int* endg, int* endb, UINT32 fboffse
 	VI_ANDER(rightdown);
 
 	UINT32 colr, colg, colb;
-
-	video_max_optimized(&backr[0], &penumaxr);
-	video_max_optimized(&backg[0], &penumaxg);
-	video_max_optimized(&backb[0], &penumaxb);
-	video_max_optimized(&invr[0], &penuminr);
-	video_max_optimized(&invg[0], &penuming);
-	video_max_optimized(&invb[0], &penuminb);
-
-	penuminr = (~penuminr) & 0xff;
-	penuming = (~penuming) & 0xff;
-	penuminb = (~penuminb) & 0xff;
+	
+	
+	
+	video_max_optimized(backr, &penuminr, &penumaxr, numoffull);
+	video_max_optimized(backg, &penuming, &penumaxg, numoffull);
+	video_max_optimized(backb, &penuminb, &penumaxb, numoffull);
 
 	
+	
+
 	
 	UINT32 coeff = 7 - centercvg;
 	colr = penuminr + penumaxr - (r << 1);
@@ -9068,7 +9053,6 @@ STRICTINLINE void video_filter32(int* endr, int* endg, int* endb, UINT32 fboffse
 	UINT32 pix = 0, pixcvg = 0;
 	UINT32 r, g, b; 
 	UINT32 backr[7], backg[7], backb[7];
-	UINT32 invr[7], invg[7], invb[7];
 
 	r = *endr;
 	g = *endg;
@@ -9077,9 +9061,6 @@ STRICTINLINE void video_filter32(int* endr, int* endg, int* endb, UINT32 fboffse
 	backr[0] = r;
 	backg[0] = g;
 	backb[0] = b;
-	invr[0] = (~r) & 0xff;
-	invg[0] = (~g) & 0xff;
-	invb[0] = (~b) & 0xff;
 
 	UINT32 idx = (fboffset >> 2) + num;
 	UINT32 leftup = idx - hres - 1;
@@ -9097,17 +9078,8 @@ STRICTINLINE void video_filter32(int* endr, int* endg, int* endb, UINT32 fboffse
 				backr[numoffull] = (pix >> 24) & 0xff;					\
 				backg[numoffull] = (pix >> 16) & 0xff;					\
 				backb[numoffull] = (pix >> 8) & 0xff;					\
-				invr[numoffull] = (~backr[numoffull]) & 0xff;			\
-				invg[numoffull] = (~backg[numoffull]) & 0xff;			\
-				invb[numoffull] = (~backb[numoffull]) & 0xff;			\
+				numoffull++;											\
 			}															\
-			else														\
-			{															\
-                backr[numoffull] = invr[numoffull] = 0;					\
-				backg[numoffull] = invg[numoffull] = 0;					\
-				backb[numoffull] = invb[numoffull] = 0;					\
-			}															\
-			numoffull++;												\
 }
 	
 	VI_ANDER32(leftup);
@@ -9119,16 +9091,9 @@ STRICTINLINE void video_filter32(int* endr, int* endg, int* endb, UINT32 fboffse
 
 	UINT32 colr, colg, colb;
 
-	video_max_optimized(&backr[0], &penumaxr);
-	video_max_optimized(&backg[0], &penumaxg);
-	video_max_optimized(&backb[0], &penumaxb);
-	video_max_optimized(&invr[0], &penuminr);
-	video_max_optimized(&invg[0], &penuming);
-	video_max_optimized(&invb[0], &penuminb);
-
-	penuminr = (~penuminr) & 0xff;
-	penuming = (~penuming) & 0xff;
-	penuminb = (~penuminb) & 0xff;
+	video_max_optimized(backr, &penuminr, &penumaxr, numoffull);
+	video_max_optimized(backg, &penuming, &penumaxg, numoffull);
+	video_max_optimized(backb, &penuminb, &penumaxb, numoffull);
 
 	UINT32 coeff = 7 - centercvg;
 	colr = penuminr + penumaxr - (r << 1);
@@ -9359,34 +9324,49 @@ STRICTINLINE void adjust_brightness(int* r, int* g, int* b, int brightcoeff)
 }
 
 
-STRICTINLINE void video_max_optimized(UINT32* Pixels, UINT32* pen)
+STRICTINLINE void video_max_optimized(UINT32* pixels, UINT32* penumin, UINT32* penumax, int numofels)
 {
-	int i;
-	int pos = 0;
-	UINT32 curpen = Pixels[0];
-	UINT32 max;
-	for (i = 1; i < 7; i++)
-	{
-	    if (Pixels[i] > Pixels[pos])
-		{
-			curpen = Pixels[pos];
-			pos = i;			
-		}
-	}
-	max = Pixels[pos];
-	if (curpen != max)
-	{
-		for (i = pos + 1; i < 7; i++)
-		{
-			if (Pixels[i] > curpen)
-			{
-				curpen = Pixels[i];
-			}
-		}
-	}
-	*pen = curpen;
 
-	
+
+
+	int i;
+	int posmax = 0, posmin = 0;
+	UINT32 curpenmax = pixels[0], curpenmin = pixels[0];
+	UINT32 max, min;
+
+	for (i = 1; i < numofels; i++)
+	{
+	    if (pixels[i] > pixels[posmax])
+		{
+			curpenmax = pixels[posmax];
+			posmax = i;			
+		}
+		else if (pixels[i] < pixels[posmin])
+		{
+			curpenmin = pixels[posmin];
+			posmin = i;
+		}
+	}
+	max = pixels[posmax];
+	min = pixels[posmin];
+	if (curpenmax != max)
+	{
+		for (i = posmax + 1; i < numofels; i++)
+		{
+			if (pixels[i] > curpenmax)
+				curpenmax = pixels[i];
+		}
+	}
+	if (curpenmin != min)
+	{
+		for (i = posmin + 1; i < numofels; i++)
+		{
+			if (pixels[i] < curpenmin)
+				curpenmin = pixels[i];
+		}
+	}
+	*penumax = curpenmax;
+	*penumin = curpenmin;
 }
 
 
