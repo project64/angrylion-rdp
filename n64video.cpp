@@ -10,6 +10,7 @@ extern GFX_INFO gfx;
 #define SIGN16(x)	((INT16)(x))
 #define SIGN8(x)	((INT8)(x))
 
+
 #define SIGN(x, numb)	(((x) & ((1 << numb) - 1)) | -((x) & (1 << (numb - 1))))
 #define SIGNF(x, numb)	((x) | -((x) & (1 << (numb - 1))))
 
@@ -6243,13 +6244,13 @@ static void edgewalker_for_prims(INT32* ewdata)
 	ym = SIGN(ym, 14);
 	yh = SIGN(ewdata[1], 14); 
 	
-	xl = SIGN(ewdata[2], 30);
-	xh = SIGN(ewdata[4], 30);
-	xm = SIGN(ewdata[6], 30);
+	xl = SIGN(ewdata[2], 28);
+	xh = SIGN(ewdata[4], 28);
+	xm = SIGN(ewdata[6], 28);
 	
-	dxldy = (INT32)ewdata[3];
-	dxhdy = (INT32)ewdata[5];
-	dxmdy = (INT32)ewdata[7];
+	dxldy = SIGN(ewdata[3], 30);
+	dxhdy = SIGN(ewdata[5], 30);
+	dxmdy = SIGN(ewdata[7], 30);
 
 	
 	r    = (ewdata[8] & 0xffff0000) | ((ewdata[12] >> 16) & 0x0000ffff);
@@ -6703,9 +6704,9 @@ static void edgewalker_for_loads(INT32* lewdata)
 	ym = SIGN(ym, 14);
 	yh = SIGN(lewdata[1], 14); 
 	
-	xl = SIGN(lewdata[2], 30);
-	xh = SIGN(lewdata[3], 30);
-	xm = SIGN(lewdata[4], 30);
+	xl = SIGN(lewdata[2], 28);
+	xh = SIGN(lewdata[3], 28);
+	xm = SIGN(lewdata[4], 28);
 	
 	dxldy = 0;
 	dxhdy = 0;
