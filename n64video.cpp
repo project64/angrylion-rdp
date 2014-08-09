@@ -6249,6 +6249,7 @@ static void edgewalker_for_prims(INT32* ewdata)
 	xm = SIGN(ewdata[6], 28);
 	
 	dxldy = SIGN(ewdata[3], 30);
+	
 	dxhdy = SIGN(ewdata[5], 30);
 	dxmdy = SIGN(ewdata[7], 30);
 
@@ -6351,7 +6352,7 @@ static void edgewalker_for_prims(INT32* ewdata)
 	int k = 0;
 
 	int dsdiff, dtdiff, dwdiff, drdiff, dgdiff, dbdiff, dadiff, dzdiff;
-	int sign_dxhdy = (dxhdy & 0x80000000) ? 1 : 0;
+	int sign_dxhdy = (ewdata[5] & 0x80000000) ? 1 : 0;
 	
 	int dsdeh, dtdeh, dwdeh, drdeh, dgdeh, dbdeh, dadeh, dzdeh, dsdyh, dtdyh, dwdyh, drdyh, dgdyh, dbdyh, dadyh, dzdyh; 
 	int do_offset = !(sign_dxhdy ^ flip);
