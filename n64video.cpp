@@ -97,7 +97,7 @@ typedef struct
 } SPAN;
 
 static SPAN span[1024];
-UINT32 cvgbuf[1024];
+UINT8 cvgbuf[1024];
 
 
 static int spans_ds;
@@ -391,6 +391,7 @@ typedef struct{
 	int nextspan;
 	int midspan;
 	int longspan;
+	int onelessthanmid;
 }SPANSIGS;
 
 
@@ -1117,7 +1118,6 @@ int rdp_update()
 	
 	
 	
-	
 
 	void (*vi_fetch_filter_ptr)(CCVG*, UINT32, UINT32, UINT32, UINT32, UINT32) = vi_fetch_filter_func[vitype & 1];
 
@@ -1287,6 +1287,7 @@ int rdp_update()
 
 	PreScale = (INT32*)ddsd.lpSurface;
 
+	
 	
 	
 	
@@ -1639,13 +1640,18 @@ STRICTINLINE void vi_fetch_filter16(CCVG* res, UINT32 fboffset, UINT32 cur_x, UI
 {
 	int r, g, b;
 	UINT32 idx = (fboffset >> 1) + cur_x;
-	UINT32 pix, hval;
-	PAIRREAD16(pix, hval, idx); 
+	UINT32 pix, hval;	
 	UINT32 cur_cvg;
 	if (fsaa)
+	{
+		PAIRREAD16(pix, hval, idx); 
 		cur_cvg = ((pix & 1) << 2) | hval;
+	}
 	else
+	{
+		RREADIDX16(pix, idx);
 		cur_cvg = 7;
+	}
 	r = GET_HI(pix);
 	g = GET_MED(pix);
 	b = GET_LOW(pix);
@@ -2486,9 +2492,7 @@ INLINE void fetch_texel(COLOR *color, int s, int t, UINT32 tilenum)
 
 			save = u = TMEM[taddr & 0x7ff];
 
-			u ^= 0x80;
-			if (u & 0x80)
-				u |= 0x100;
+			u = (u - 0x80) & 0x1ff;
 
 			color->r = u;
 			color->g = u;
@@ -2515,11 +2519,8 @@ INLINE void fetch_texel(COLOR *color, int s, int t, UINT32 tilenum)
 			u = c >> 8;
 			v = c & 0xff;
 
-			v ^= 0x80; u ^= 0x80;
-			if (v & 0x80)
-				v |= 0x100;
-			if (u & 0x80)
-				u |= 0x100;
+			u = (u - 0x80) & 0x1ff;
+			v = (v - 0x80) & 0x1ff;
 			
 			
 
@@ -3031,21 +3032,13 @@ INLINE void fetch_texel_quadro(COLOR *color0, COLOR *color1, COLOR *color2, COLO
 			INT32 u0, u1, u2, u3, save0, save1, save2, save3;
 
 			save0 = u0 = TMEM[taddr0 & 0x7ff];
-			u0 ^= 0x80;
-			if (u0 & 0x80)
-				u0 |= 0x100;
+			u0 = (u0 - 0x80) & 0x1ff;
 			save1 = u1 = TMEM[taddr1 & 0x7ff];
-			u1 ^= 0x80;
-			if (u1 & 0x80)
-				u1 |= 0x100;
+			u1 = (u1 - 0x80) & 0x1ff;
 			save2 = u2 = TMEM[taddr2 & 0x7ff];
-			u2 ^= 0x80;
-			if (u2 & 0x80)
-				u2 |= 0x100;
+			u2 = (u2 - 0x80) & 0x1ff;
 			save3 = u3 = TMEM[taddr3 & 0x7ff];
-			u3 ^= 0x80;
-			if (u3 & 0x80)
-				u3 |= 0x100;
+			u3 = (u3 - 0x80) & 0x1ff;
 
 			color0->r = u0;
 			color0->g = u0;
@@ -3120,26 +3113,14 @@ INLINE void fetch_texel_quadro(COLOR *color0, COLOR *color1, COLOR *color2, COLO
 			u3 = c3 >> 8;
 			v3 = c3 & 0xff;
 
-			v0 ^= 0x80; u0 ^= 0x80;
-			if (v0 & 0x80)
-				v0 |= 0x100;
-			if (u0 & 0x80)
-				u0 |= 0x100;
-			v1 ^= 0x80; u1 ^= 0x80;
-			if (v1 & 0x80)
-				v1 |= 0x100;
-			if (u1 & 0x80)
-				u1 |= 0x100;
-			v2 ^= 0x80; u2 ^= 0x80;
-			if (v2 & 0x80)
-				v2 |= 0x100;
-			if (u2 & 0x80)
-				u2 |= 0x100;
-			v3 ^= 0x80; u3 ^= 0x80;
-			if (v3 & 0x80)
-				v3 |= 0x100;
-			if (u3 & 0x80)
-				u3 |= 0x100;
+			u0 = (u0 - 0x80) & 0x1ff;
+			v0 = (v0 - 0x80) & 0x1ff;
+			u1 = (u1 - 0x80) & 0x1ff;
+			v1 = (v1 - 0x80) & 0x1ff;
+			u2 = (u2 - 0x80) & 0x1ff;
+			v2 = (v2 - 0x80) & 0x1ff;
+			u3 = (u3 - 0x80) & 0x1ff;
+			v3 = (v3 - 0x80) & 0x1ff;
 
 			color0->r = u0;
 			color0->g = v0;
@@ -4646,6 +4627,7 @@ void render_spans_1cycle_complete(int start, int end, int tilenum, int flip)
 		
 		sigs.longspan = (length > 7);
 		sigs.midspan = (length == 7);
+		sigs.onelessthanmid = (length == 6);
 
 		
 		
@@ -4713,8 +4695,8 @@ void render_spans_1cycle_complete(int start, int end, int tilenum, int flip)
 			t += dtinc;
 			w += dwinc;
 			
-			tclod_1cycle_next(&news, &newt, s, t, w, dsinc, dtinc, dwinc, i, prim_tile, &newtile, &sigs, &prelodfrac);			
-			
+			tclod_1cycle_next(&news, &newt, s, t, w, dsinc, dtinc, dwinc, i, prim_tile, &newtile, &sigs, &prelodfrac);
+
 			texture_pipeline_cycle(&texel1_color, &texel1_color, news, newt, newtile, 0);
 
 			rgbaz_correct_clip(offx, offy, sr, sg, sb, sa, &sz, curpixel_cvg);
@@ -7435,6 +7417,8 @@ static void rdp_tex_rect_flip(UINT32 w1, UINT32 w2)
 	edgewalker_for_prims(ewdata);
 }
 
+
+
 static void rdp_sync_load(UINT32 w1, UINT32 w2)
 {
 	
@@ -8213,35 +8197,43 @@ STRICTINLINE UINT32 leftcvghex(UINT32 x, UINT32 fmask)
 	return (covered & fmask);
 }
 
+
 STRICTINLINE void compute_cvg_flip(INT32 scanline)
 {
 	INT32 purgestart, purgeend;
 	int i, length, fmask, maskshift, fmaskshifted;
-	INT32 fleft, minorcur, majorcur, minorcurint, majorcurint, samecvg;
+	INT32 minorcur, majorcur, minorcurint, majorcurint, samecvg;
 	
 	purgestart = span[scanline].rx;
 	purgeend = span[scanline].lx;
 	length = purgeend - purgestart;
 	if (length >= 0)
 	{
-		memset(&cvgbuf[purgestart], 0, (length + 1) << 2);
+		
+		memset(&cvgbuf[purgestart], 0xff, length + 1);
 		for(i = 0; i < 4; i++)
 		{
+			fmask = 0xa >> (i & 1);
+			
+			
+			
+			
+			maskshift = (i - 2) & 4;
+
+			fmaskshifted = fmask << maskshift;
+
 			if (!span[scanline].invalyscan[i])
 			{
 				minorcur = span[scanline].minorx[i];
 				majorcur = span[scanline].majorx[i];
 				minorcurint = minorcur >> 3;
 				majorcurint = majorcur >> 3;
-				fmask = 0xa >> (i & 1);
-				
-				
-				
-				
-				maskshift = (i - 2) & 4;
 
-				fmaskshifted = fmask << maskshift;
-				fleft = majorcurint + 1;
+				
+				for (int k = purgestart; k <= majorcurint; k++)
+					cvgbuf[k] &= ~fmaskshifted;
+				for (int k = minorcurint; k <= purgeend; k++)
+					cvgbuf[k] &= ~fmaskshifted;
 
 				if (minorcurint != majorcurint)
 				{
@@ -8253,9 +8245,13 @@ STRICTINLINE void compute_cvg_flip(INT32 scanline)
 					samecvg = rightcvghex(minorcur, fmask) & leftcvghex(majorcur, fmask);
 					cvgbuf[majorcurint] |= (samecvg << maskshift);
 				}
-				for (; fleft < minorcurint; fleft++)
-					cvgbuf[fleft] |= fmaskshifted;
 			}
+			else
+			{
+				for (int k = purgestart; k <= purgeend; k++)
+					cvgbuf[k] &= ~fmaskshifted;
+			}
+
 		}
 	}
 }
@@ -8264,7 +8260,7 @@ STRICTINLINE void compute_cvg_noflip(INT32 scanline)
 {
 	INT32 purgestart, purgeend;
 	int i, length, fmask, maskshift, fmaskshifted;
-	INT32 fleft, minorcur, majorcur, minorcurint, majorcurint, samecvg;
+	INT32 minorcur, majorcur, minorcurint, majorcurint, samecvg;
 	
 	purgestart = span[scanline].lx;
 	purgeend = span[scanline].rx;
@@ -8272,20 +8268,25 @@ STRICTINLINE void compute_cvg_noflip(INT32 scanline)
 
 	if (length >= 0)
 	{
-		memset(&cvgbuf[purgestart], 0, (length + 1) << 2);
+		memset(&cvgbuf[purgestart], 0xff, length + 1);
 
 		for(i = 0; i < 4; i++)
 		{
+			fmask = 0xa >> (i & 1);
+			maskshift = (i - 2) & 4;
+			fmaskshifted = fmask << maskshift;
+
 			if (!span[scanline].invalyscan[i])
 			{
 				minorcur = span[scanline].minorx[i];
 				majorcur = span[scanline].majorx[i];
 				minorcurint = minorcur >> 3;
 				majorcurint = majorcur >> 3;
-				fmask = 0xa >> (i & 1);
-				maskshift = (i - 2) & 4;
-				fmaskshifted = fmask << maskshift;
-				fleft = minorcurint + 1;
+								
+				for (int k = purgestart; k <= minorcurint; k++)
+					cvgbuf[k] &= ~fmaskshifted;
+				for (int k = majorcurint; k <= purgeend; k++)
+					cvgbuf[k] &= ~fmaskshifted;
 
 				if (minorcurint != majorcurint)
 				{
@@ -8297,8 +8298,11 @@ STRICTINLINE void compute_cvg_noflip(INT32 scanline)
 					samecvg = leftcvghex(minorcur, fmask) & rightcvghex(majorcur, fmask);
 					cvgbuf[majorcurint] |= (samecvg << maskshift);
 				}
-				for (; fleft < majorcurint; fleft++)
-					cvgbuf[fleft] |= fmaskshifted;
+			}
+			else
+			{
+				for (int k = purgestart; k <= purgeend; k++)
+					cvgbuf[k] &= ~fmaskshifted;
 			}
 		}
 	}
@@ -8438,29 +8442,43 @@ INLINE void fbread_16(UINT32 curpixel, UINT32* curpixel_memcvg)
 	UINT16 fword;
 	UINT8 hbyte;
 	UINT32 addr = (fb_address >> 1) + curpixel;
-	PAIRREAD16(fword, hbyte, addr);
+	
 	UINT8 lowbits;
 
-	if (fb_format == FORMAT_RGBA)
-	{
-		memory_color.r = GET_HI(fword);
-		memory_color.g = GET_MED(fword);
-		memory_color.b = GET_LOW(fword);
-		lowbits = ((fword & 1) << 2) | hbyte;
-	}
-	else
-	{
-		memory_color.r = memory_color.g = memory_color.b = fword >> 8;
-		lowbits = (fword >> 5) & 7;
-	}
-
+	
 	if (other_modes.image_read_en)
 	{
+		PAIRREAD16(fword, hbyte, addr);
+
+		if (fb_format == FORMAT_RGBA)
+		{
+			memory_color.r = GET_HI(fword);
+			memory_color.g = GET_MED(fword);
+			memory_color.b = GET_LOW(fword);
+			lowbits = ((fword & 1) << 2) | hbyte;
+		}
+		else
+		{
+			memory_color.r = memory_color.g = memory_color.b = fword >> 8;
+			lowbits = (fword >> 5) & 7;
+		}
+
 		*curpixel_memcvg = lowbits;
 		memory_color.a = lowbits << 5;
 	}
 	else
 	{
+		RREADIDX16(fword, addr);
+
+		if (fb_format == FORMAT_RGBA)
+		{
+			memory_color.r = GET_HI(fword);
+			memory_color.g = GET_MED(fword);
+			memory_color.b = GET_LOW(fword);
+		}
+		else
+			memory_color.r = memory_color.g = memory_color.b = fword >> 8;
+
 		*curpixel_memcvg = 7;
 		memory_color.a = 0xe0;
 	}
@@ -8471,29 +8489,42 @@ INLINE void fbread2_16(UINT32 curpixel, UINT32* curpixel_memcvg)
 	UINT16 fword;
 	UINT8 hbyte;
 	UINT32 addr = (fb_address >> 1) + curpixel;
-	PAIRREAD16(fword, hbyte, addr);
+	
 	UINT8 lowbits;
-
-	if (fb_format == FORMAT_RGBA)
-	{
-		pre_memory_color.r = GET_HI(fword);
-		pre_memory_color.g = GET_MED(fword);
-		pre_memory_color.b = GET_LOW(fword);
-		lowbits = ((fword & 1) << 2) | hbyte;
-	}
-	else
-	{
-		pre_memory_color.r = pre_memory_color.g = pre_memory_color.b = fword >> 8;
-		lowbits = (fword >> 5) & 7;
-	}
 
 	if (other_modes.image_read_en)
 	{
+		PAIRREAD16(fword, hbyte, addr);
+
+		if (fb_format == FORMAT_RGBA)
+		{
+			pre_memory_color.r = GET_HI(fword);
+			pre_memory_color.g = GET_MED(fword);
+			pre_memory_color.b = GET_LOW(fword);
+			lowbits = ((fword & 1) << 2) | hbyte;
+		}
+		else
+		{
+			pre_memory_color.r = pre_memory_color.g = pre_memory_color.b = fword >> 8;
+			lowbits = (fword >> 5) & 7;
+		}
+
 		*curpixel_memcvg = lowbits;
 		pre_memory_color.a = lowbits << 5;
 	}
 	else
 	{
+		RREADIDX16(fword, addr);
+
+		if (fb_format == FORMAT_RGBA)
+		{
+			pre_memory_color.r = GET_HI(fword);
+			pre_memory_color.g = GET_MED(fword);
+			pre_memory_color.b = GET_LOW(fword);
+		}
+		else
+			pre_memory_color.r = pre_memory_color.g = pre_memory_color.b = fword >> 8;
+
 		*curpixel_memcvg = 7;
 		pre_memory_color.a = 0xe0;
 	}
@@ -9450,6 +9481,7 @@ INLINE void calculate_tile_derivs(UINT32 i)
 
 INLINE void rgb_dither_complete(int* r, int* g, int* b, int dith)
 {
+
 	if ((*r & 7) > dith)
 	{
 		if (*r > 247)
@@ -10337,6 +10369,7 @@ STRICTINLINE void tclod_1cycle_next(INT32* sss, INT32* sst, INT32 s, INT32 t, IN
 		
 		if (span[nextscan].validline)
 		{
+			
 			if (!sigs->nextspan)
 			{
 				if (!sigs->endspan || !sigs->longspan)
@@ -10373,8 +10406,11 @@ STRICTINLINE void tclod_1cycle_next(INT32* sss, INT32* sst, INT32 s, INT32 t, IN
 			}
 			else
 			{
-				if (sigs->longspan || sigs->midspan)
+				if (!sigs->onelessthanmid)
 				{
+				
+				
+				
 					nextt = span[nextscan].t + dtinc;
 					nexts = span[nextscan].s + dsinc;
 					nextsw = span[nextscan].w + dwinc;
@@ -10516,6 +10552,13 @@ STRICTINLINE void get_texel1_1cycle(INT32* s1, INT32* t1, INT32 s, INT32 t, INT3
 	}
 	else
 	{
+	
+	
+	
+	
+	
+	
+	
 		INT32 nextscan = scanline + 1;
 		nextt = span[nextscan].t >> 16;
 		nexts = span[nextscan].s >> 16;
