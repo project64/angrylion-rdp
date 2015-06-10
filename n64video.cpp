@@ -4259,6 +4259,8 @@ void fetch_qword_copy(UINT32* hidword, UINT32* lowdword, INT32 ssss, INT32 ssst,
 STRICTINLINE void texture_pipeline_cycle(COLOR* TEX, COLOR* prev, INT32 SSS, INT32 SST, UINT32 tilenum, UINT32 cycle)											
 {
 #define TRELATIVE(x, y) 	((x) - ((y) << 3));
+
+
 #define UPPER ((sfrac + tfrac) & 0x20)
 
 
@@ -8198,6 +8200,7 @@ STRICTINLINE UINT32 leftcvghex(UINT32 x, UINT32 fmask)
 }
 
 
+
 STRICTINLINE void compute_cvg_flip(INT32 scanline)
 {
 	INT32 purgestart, purgeend;
@@ -9482,47 +9485,48 @@ INLINE void calculate_tile_derivs(UINT32 i)
 INLINE void rgb_dither_complete(int* r, int* g, int* b, int dith)
 {
 
-	if ((*r & 7) > dith)
-	{
-		if (*r > 247)
-			*r = 255;
-		else
-			*r = (*r & 0xf8) + 8;
-	}
+	INT32 newr = *r, newg = *g, newb = *b;
+	INT32 rcomp = dith, gcomp, bcomp;
+
+	
+	if (newr > 247)
+		newr = 255;
+	else
+		newr = (newr & 0xf8) + 8;
+	if (newg > 247)
+		newg = 255;
+	else
+		newg = (newg & 0xf8) + 8;
+	if (newb > 247)
+		newb = 255;
+	else
+		newb = (newb & 0xf8) + 8;
+
 	if (other_modes.rgb_dither_sel != 2)
-	{
-		if ((*g & 7) > dith)
-		{
-			if (*g > 247)
-				*g = 255;
-			else
-				*g = (*g & 0xf8) + 8;
-		}
-		if ((*b & 7) > dith)
-		{
-			if (*b > 247)
-				*b = 255;
-			else
-				*b = (*b & 0xf8) + 8;
-		}
-	}
+		gcomp = bcomp = dith;
 	else
 	{
-		if ((*g & 7) > ((dith + 3) & 7))
-		{
-			if (*g > 247)
-				*g = 255;
-			else
-				*g = (*g & 0xf8) + 8;
-		}
-		if ((*b & 7) > ((dith + 5) & 7))
-		{
-			if (*b > 247)
-				*b = 255;
-			else
-				*b = (*b & 0xf8) + 8;
-		}
+		gcomp = (dith + 3) & 7;
+		bcomp = (dith + 5) & 7;
 	}
+
+	
+	
+	
+	
+	INT32 replacesign = (rcomp - (*r & 7)) >> 31;
+	
+	INT32 ditherdiff = newr - *r;
+	*r = *r + (ditherdiff & replacesign);
+
+	replacesign = (gcomp - (*g & 7)) >> 31;
+	ditherdiff = newg - *g;
+	*g = *g + (ditherdiff & replacesign);
+
+	replacesign = (bcomp - (*b & 7)) >> 31;
+	ditherdiff = newb - *b;
+	*b = *b + (ditherdiff & replacesign);
+	
 }
 
 INLINE void rgb_dither_nothing(int* r, int* g, int* b, int dith)
@@ -10408,6 +10412,7 @@ STRICTINLINE void tclod_1cycle_next(INT32* sss, INT32* sst, INT32 s, INT32 t, IN
 			{
 				if (!sigs->onelessthanmid)
 				{
+				
 				
 				
 				
