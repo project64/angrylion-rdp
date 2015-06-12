@@ -820,6 +820,7 @@ STRICTINLINE void tcshift_cycle(INT32* S, INT32* T, INT32* maxs, INT32* maxt, UI
 	INT32 coord = *S;
 	INT32 shifter = tile[num].shift_s;
 
+	
 	if (shifter < 11)
 	{
 		coord = SIGN16(coord);
@@ -1151,10 +1152,13 @@ int rdp_update()
 	UINT32 x_start = (vi_x_scale >> 16) & 0xfff;
 	UINT32 x_add = vi_x_scale & 0xfff;
 
+	int h_start_clamped = 0;
+
 	if (h_start < 0)
 	{
 		x_start += (x_add * (-h_start));
 		h_start = 0;
+		h_start_clamped = 1;
 	}
 
 	int cache_marker_init = (x_start >> 10) - 2;
@@ -1200,9 +1204,12 @@ int rdp_update()
 	if (v_start < 0)
 		v_start = 0;
 
+	int hres_clamped = 0;
+
 	if ((hres + h_start) > PRESCALE_WIDTH)
 	{
 		hres = PRESCALE_WIDTH - h_start;
+		hres_clamped = 1;
 	}
 
 	
@@ -1224,7 +1231,7 @@ int rdp_update()
 		return 0;
 	vactivelines >>= lineshifter;
 
-	int validh = (hres >=0 && h_start >=0 && h_start < PRESCALE_WIDTH);
+	int validh = (hres >=0 && h_start < PRESCALE_WIDTH);
 
 	
 	
@@ -1258,6 +1265,22 @@ int rdp_update()
 
 	UINT32 prescale_ptr = v_start * linecount + h_start + (lowerfield ? pitchindwords : 0);
 	
+
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	int minhpass = h_start_clamped ? 0 : 8;
+	int maxhpass =  hres_clamped ? hres : (hres - 8);
 
 	if (hres <= 0 || vres <= 0 || (!(vitype & 2) && prevwasblank))
 	{
@@ -1583,7 +1606,11 @@ int rdp_update()
 							r = g = b = 0xff;
 #endif
 						adjust_brightness(&r, &g, &b, slowbright);
-						d[i] = (r << 16) | (g << 8) | b;
+
+						if (i >= minhpass && i <= maxhpass)
+							d[i] = (r << 16) | (g << 8) | b;
+						else
+							d[i] = 0;
 						x_start += x_add;
 
 					}
@@ -1828,10 +1855,26 @@ STRICTINLINE void combiner_1cycle(int adseed, UINT32* curpixel_cvg)
 	
 
 	
-	combined_color.r = color_combiner_equation(*combiner_rgbsub_a_r[1],*combiner_rgbsub_b_r[1],*combiner_rgbmul_r[1],*combiner_rgbadd_r[1]);
-	combined_color.g = color_combiner_equation(*combiner_rgbsub_a_g[1],*combiner_rgbsub_b_g[1],*combiner_rgbmul_g[1],*combiner_rgbadd_g[1]);
-	combined_color.b = color_combiner_equation(*combiner_rgbsub_a_b[1],*combiner_rgbsub_b_b[1],*combiner_rgbmul_b[1],*combiner_rgbadd_b[1]);
-	combined_color.a = alpha_combiner_equation(*combiner_alphasub_a[1],*combiner_alphasub_b[1],*combiner_alphamul[1],*combiner_alphaadd[1]);
+	
+	
+	if (combiner_rgbmul_r[1] != &zero_color)
+	{
+		
+		combined_color.r = color_combiner_equation(*combiner_rgbsub_a_r[1],*combiner_rgbsub_b_r[1],*combiner_rgbmul_r[1],*combiner_rgbadd_r[1]);
+		combined_color.g = color_combiner_equation(*combiner_rgbsub_a_g[1],*combiner_rgbsub_b_g[1],*combiner_rgbmul_g[1],*combiner_rgbadd_g[1]);
+		combined_color.b = color_combiner_equation(*combiner_rgbsub_a_b[1],*combiner_rgbsub_b_b[1],*combiner_rgbmul_b[1],*combiner_rgbadd_b[1]);
+	}
+	else
+	{
+		combined_color.r = ((special_9bit_exttable[*combiner_rgbadd_r[1]] << 8) + 0x80) & 0x1ffff;
+		combined_color.g = ((special_9bit_exttable[*combiner_rgbadd_g[1]] << 8) + 0x80) & 0x1ffff;
+		combined_color.b = ((special_9bit_exttable[*combiner_rgbadd_b[1]] << 8) + 0x80) & 0x1ffff;
+	}
+
+	if (combiner_alphamul[1] != &zero_color)
+		combined_color.a = alpha_combiner_equation(*combiner_alphasub_a[1],*combiner_alphasub_b[1],*combiner_alphamul[1],*combiner_alphaadd[1]);
+	else
+		combined_color.a = special_9bit_exttable[*combiner_alphaadd[1]] & 0x1ff;
 
 	pixel_color.a = special_9bit_clamptable[combined_color.a];
 	if (pixel_color.a == 0xff)
@@ -1868,6 +1911,7 @@ STRICTINLINE void combiner_1cycle(int adseed, UINT32* curpixel_cvg)
 		keyalpha = (bluekey < keyalpha) ? bluekey : keyalpha;
 		keyalpha = CLIP(keyalpha, 0, 0xff);
 
+		
 		
 		pixel_color.r = special_9bit_clamptable[*combiner_rgbsub_a_r[1]];
 		pixel_color.g = special_9bit_clamptable[*combiner_rgbsub_a_g[1]];
@@ -1917,10 +1961,23 @@ STRICTINLINE void combiner_2cycle(int adseed, UINT32* curpixel_cvg)
 {
 	INT32 redkey, greenkey, bluekey, temp;
 
-	combined_color.r = color_combiner_equation(*combiner_rgbsub_a_r[0],*combiner_rgbsub_b_r[0],*combiner_rgbmul_r[0],*combiner_rgbadd_r[0]);
-	combined_color.g = color_combiner_equation(*combiner_rgbsub_a_g[0],*combiner_rgbsub_b_g[0],*combiner_rgbmul_g[0],*combiner_rgbadd_g[0]);
-	combined_color.b = color_combiner_equation(*combiner_rgbsub_a_b[0],*combiner_rgbsub_b_b[0],*combiner_rgbmul_b[0],*combiner_rgbadd_b[0]);
-	combined_color.a = alpha_combiner_equation(*combiner_alphasub_a[0],*combiner_alphasub_b[0],*combiner_alphamul[0],*combiner_alphaadd[0]);
+	if (combiner_rgbmul_r[0] != &zero_color)
+	{
+		combined_color.r = color_combiner_equation(*combiner_rgbsub_a_r[0],*combiner_rgbsub_b_r[0],*combiner_rgbmul_r[0],*combiner_rgbadd_r[0]);
+		combined_color.g = color_combiner_equation(*combiner_rgbsub_a_g[0],*combiner_rgbsub_b_g[0],*combiner_rgbmul_g[0],*combiner_rgbadd_g[0]);
+		combined_color.b = color_combiner_equation(*combiner_rgbsub_a_b[0],*combiner_rgbsub_b_b[0],*combiner_rgbmul_b[0],*combiner_rgbadd_b[0]);
+	}
+	else
+	{
+		combined_color.r = ((special_9bit_exttable[*combiner_rgbadd_r[0]] << 8) + 0x80) & 0x1ffff;
+		combined_color.g = ((special_9bit_exttable[*combiner_rgbadd_g[0]] << 8) + 0x80) & 0x1ffff;
+		combined_color.b = ((special_9bit_exttable[*combiner_rgbadd_b[0]] << 8) + 0x80) & 0x1ffff;
+	}
+
+	if (combiner_alphamul[0] != &zero_color)
+		combined_color.a = alpha_combiner_equation(*combiner_alphasub_a[0],*combiner_alphasub_b[0],*combiner_alphamul[0],*combiner_alphaadd[0]);
+	else
+		combined_color.a = special_9bit_exttable[*combiner_alphaadd[0]] & 0x1ff;
 
 	
 	
@@ -1942,10 +1999,23 @@ STRICTINLINE void combiner_2cycle(int adseed, UINT32* curpixel_cvg)
 	
 	
 
-	combined_color.r = color_combiner_equation(*combiner_rgbsub_a_r[1],*combiner_rgbsub_b_r[1],*combiner_rgbmul_r[1],*combiner_rgbadd_r[1]);
-	combined_color.g = color_combiner_equation(*combiner_rgbsub_a_g[1],*combiner_rgbsub_b_g[1],*combiner_rgbmul_g[1],*combiner_rgbadd_g[1]);
-	combined_color.b = color_combiner_equation(*combiner_rgbsub_a_b[1],*combiner_rgbsub_b_b[1],*combiner_rgbmul_b[1],*combiner_rgbadd_b[1]);
-	combined_color.a = alpha_combiner_equation(*combiner_alphasub_a[1],*combiner_alphasub_b[1],*combiner_alphamul[1],*combiner_alphaadd[1]);
+	if (combiner_rgbmul_r[1] != &zero_color)
+	{
+		combined_color.r = color_combiner_equation(*combiner_rgbsub_a_r[1],*combiner_rgbsub_b_r[1],*combiner_rgbmul_r[1],*combiner_rgbadd_r[1]);
+		combined_color.g = color_combiner_equation(*combiner_rgbsub_a_g[1],*combiner_rgbsub_b_g[1],*combiner_rgbmul_g[1],*combiner_rgbadd_g[1]);
+		combined_color.b = color_combiner_equation(*combiner_rgbsub_a_b[1],*combiner_rgbsub_b_b[1],*combiner_rgbmul_b[1],*combiner_rgbadd_b[1]);
+	}
+	else
+	{
+		combined_color.r = ((special_9bit_exttable[*combiner_rgbadd_r[1]] << 8) + 0x80) & 0x1ffff;
+		combined_color.g = ((special_9bit_exttable[*combiner_rgbadd_g[1]] << 8) + 0x80) & 0x1ffff;
+		combined_color.b = ((special_9bit_exttable[*combiner_rgbadd_b[1]] << 8) + 0x80) & 0x1ffff;
+	}
+
+	if (combiner_alphamul[1] != &zero_color)
+		combined_color.a = alpha_combiner_equation(*combiner_alphasub_a[1],*combiner_alphasub_b[1],*combiner_alphamul[1],*combiner_alphaadd[1]);
+	else
+		combined_color.a = special_9bit_exttable[*combiner_alphaadd[1]] & 0x1ff;
 
 	if (!other_modes.key_en)
 	{
@@ -2049,8 +2119,10 @@ INLINE void precalculate_everything(void)
 	
 	
 	
+	
 	z_build_com_table();
 
+	
 	
 	
 	UINT32 exponent;
@@ -2097,6 +2169,8 @@ INLINE void precalculate_everything(void)
 
 	
 	
+	
+	
 	for (i = 0; i < 32; i++)
 		replicated_rgba[i] = (i << 3) | ((i >> 2) & 7); 
 
@@ -2105,7 +2179,6 @@ INLINE void precalculate_everything(void)
 	maskbits_table[0] = 0x3ff;
 	for (i = 1; i < 16; i++)
 		maskbits_table[i] = ((UINT16)(0xffff) >> (16 - i)) & 0x3ff;
-	
 
 	
 	
@@ -2168,7 +2241,6 @@ INLINE void precalculate_everything(void)
 	
 	int d = 0, n = 0, temp = 0, res = 0, invd = 0, nbit = 0;
 	int ps[9];
-
 	for (i = 0; i < 0x8000; i++)
 	{
 		res = 0;
@@ -4310,6 +4382,9 @@ STRICTINLINE void texture_pipeline_cycle(COLOR* TEX, COLOR* prev, INT32 SSS, INT
 		
 		
 		
+		
+		
+		
 
 		
 		if (bilerp)
@@ -5765,9 +5840,12 @@ void render_spans_fill(int start, int end, int flip)
 			
 			
 			
+
+			
 			for (j = 0; j <= length; j++)
 			{
 				fbfill_ptr(curpixel);
+				
 				x += xinc;
 				curpixel += xinc;
 			}
@@ -7298,6 +7376,11 @@ static void rdp_tri_texshade_z(UINT32 w1, UINT32 w2)
 {
 	INT32 ewdata[44];
 	memcpy(&ewdata[0], &rdp_cmd_data[rdp_cmd_cur], 44 * sizeof(INT32));
+
+	
+	
+	
+
 	edgewalker_for_prims(ewdata);
 }
 
@@ -7967,16 +8050,19 @@ void rdp_process_list(void)
 	
 	
 
-	
-	if ((rdp_cmd_ptr + length) & ~0xffff)
-		fatalerror("rdp_process_list: rdp_cmd_ptr overflow: length 0x%x ptr_onstart 0x%x", length, ptr_onstart);
+	UINT32 remaining_length = length;
 
 	
 	dp_current_al >>= 2;
 
+	while (remaining_length)
+	{
+
+	int toload = remaining_length > 0x10000 ? 0x10000 : remaining_length;
+
 	if (dp_status & DP_STATUS_XBUS_DMA)
 	{
-		for (i = 0; i < length; i ++)
+		for (i = 0; i < toload; i ++)
 		{
 			rdp_cmd_data[rdp_cmd_ptr] = rsp_dmem[dp_current_al & 0x3ff];
 			rdp_cmd_ptr++;
@@ -7985,7 +8071,7 @@ void rdp_process_list(void)
 	}
 	else
 	{
-		for (i = 0; i < length; i ++)
+		for (i = 0; i < toload; i ++)
 		{
 			RREADIDX32(rdp_cmd_data[rdp_cmd_ptr], dp_current_al);
 			rdp_cmd_ptr++;
@@ -7993,6 +8079,7 @@ void rdp_process_list(void)
 		}
 	}
 	
+	remaining_length -= toload;
 
 	while (rdp_cmd_cur < rdp_cmd_ptr && !rdp_pipeline_crashed)
 	{
@@ -8003,9 +8090,18 @@ void rdp_process_list(void)
 		
 		if ((rdp_cmd_ptr - rdp_cmd_cur) < cmd_length)
 		{
-			
-			dp_start = dp_current = dp_end;
-			return;
+			if (!remaining_length)
+			{
+				
+				dp_start = dp_current = dp_end;
+				return;
+			}
+			else
+			{
+				dp_current_al -= (rdp_cmd_ptr - rdp_cmd_cur);
+				remaining_length += (rdp_cmd_ptr - rdp_cmd_cur);
+				break;
+			}
 		}
 		
 		if (LOG_RDP_EXECUTION)
@@ -8033,6 +8129,8 @@ void rdp_process_list(void)
 	};
 	rdp_cmd_ptr = 0;
 	rdp_cmd_cur = 0;
+	};
+
 	dp_start = dp_current = dp_end;
 	
 	
@@ -8050,6 +8148,7 @@ STRICTINLINE int alpha_compare(INT32 comb_alpha)
 			threshold = blend_color.a;
 		else
 			threshold = irand() & 0xff;
+
 		if (comb_alpha >= threshold)
 			return 1;
 		else
@@ -9486,7 +9585,7 @@ INLINE void rgb_dither_complete(int* r, int* g, int* b, int dith)
 {
 
 	INT32 newr = *r, newg = *g, newb = *b;
-	INT32 rcomp = dith, gcomp, bcomp;
+	INT32 rcomp, gcomp, bcomp;
 
 	
 	if (newr > 247)
@@ -9503,11 +9602,12 @@ INLINE void rgb_dither_complete(int* r, int* g, int* b, int dith)
 		newb = (newb & 0xf8) + 8;
 
 	if (other_modes.rgb_dither_sel != 2)
-		gcomp = bcomp = dith;
+		rcomp = gcomp = bcomp = dith;
 	else
 	{
-		gcomp = (dith + 3) & 7;
-		bcomp = (dith + 5) & 7;
+		rcomp = dith & 7;
+		gcomp = (dith >> 3) & 7;
+		bcomp = (dith >> 6) & 7;
 	}
 
 	
@@ -9584,20 +9684,20 @@ INLINE void get_dither_noise_complete(int x, int y, int* cdith, int* adith)
 		break;
 	case 8:
 		dithindex = ((y & 3) << 2) | (x & 3);
-		*cdith = irand() & 7;
+		*cdith = irand();
 		*adith = magic_matrix[dithindex];
 		break;
 	case 9:
 		dithindex = ((y & 3) << 2) | (x & 3);
-		*cdith = irand() & 7;
+		*cdith = irand();
 		*adith = (~magic_matrix[dithindex]) & 7;
 		break;
 	case 10:
-		*cdith = irand() & 7;
+		*cdith = irand();
 		*adith = (noise >> 6) & 7;
 		break;
 	case 11:
-		*cdith = irand() & 7;
+		*cdith = irand();
 		*adith = 0;
 		break;
 	case 12:
@@ -9667,20 +9767,20 @@ INLINE void get_dither_only(int x, int y, int* cdith, int* adith)
 		break;
 	case 8:
 		dithindex = ((y & 3) << 2) | (x & 3);
-		*cdith = irand() & 7;
+		*cdith = irand();
 		*adith = magic_matrix[dithindex];
 		break;
 	case 9:
 		dithindex = ((y & 3) << 2) | (x & 3);
-		*cdith = irand() & 7;
+		*cdith = irand();
 		*adith = (~magic_matrix[dithindex]) & 7;
 		break;
 	case 10:
-		*cdith = irand() & 7;
+		*cdith = irand();
 		*adith = (noise >> 6) & 7;
 		break;
 	case 11:
-		*cdith = irand() & 7;
+		*cdith = irand();
 		*adith = 0;
 		break;
 	case 12:
