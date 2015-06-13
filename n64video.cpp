@@ -1064,8 +1064,10 @@ int rdp_update()
 	UINT32 final = 0;
 
 	CCVG *viaa_cache, *viaa_cache_next, *divot_cache, *divot_cache_next;
-	CCVG viaa_array[2048];
-	CCVG divot_array[2048];
+	CCVG viaa_array[0xa10 << 1];
+	CCVG divot_array[0xa10 << 1];
+	
+	
 
 	
 	
@@ -1163,9 +1165,8 @@ int rdp_update()
 		h_start_clamped = 1;
 	}
 
-	int cache_marker_init = (x_start_init >> 10) - 2;
-	if (cache_marker_init < -1)
-		cache_marker_init = -1;
+	int cache_marker_init = (x_start_init >> 10) - 1;
+	
 	
 
 	INT32 v_end = vi_v_start & 0x3ff;
@@ -1268,9 +1269,9 @@ int rdp_update()
 	UINT32 prevy = 0;
 	CCVG* tempccvgptr;
 	viaa_cache = &viaa_array[0];
-	viaa_cache_next = &viaa_array[1024];
+	viaa_cache_next = &viaa_array[0xa10];
 	divot_cache = &divot_array[0];
-	divot_cache_next = &divot_array[1024];
+	divot_cache_next = &divot_array[0xa10];
 
 	INT32 *d = 0;
 
@@ -1472,6 +1473,12 @@ int rdp_update()
 						prev_scan_x = nextpixels + prev_line_x;
 						next_scan_x = nextpixels + next_line_x;
 						far_scan_x = nextpixels + far_line_x;
+
+						
+						line_x++;
+						prev_line_x++;
+						next_line_x++;
+						far_line_x++;
 
 						xfrac = (x_start >> 5) & 0x1f;
 
