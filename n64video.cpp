@@ -1149,21 +1149,24 @@ int rdp_update()
 	INT32 v_start = (vi_v_start >> 16) & 0x3ff;
 	INT32 h_start = ((vi_h_start >> 16) & 0x3ff) - (ispal ? 128 : 108);
 
-	UINT32 x_start = (vi_x_scale >> 16) & 0xfff;
+	UINT32 x_start, x_start_init = (vi_x_scale >> 16) & 0xfff;
 	UINT32 x_add = vi_x_scale & 0xfff;
 
 	int h_start_clamped = 0;
 
 	if (h_start < 0)
 	{
-		x_start += (x_add * (-h_start));
+		x_start_init += (x_add * (-h_start));
+		hres += h_start;
+
 		h_start = 0;
 		h_start_clamped = 1;
 	}
 
-	int cache_marker_init = (x_start >> 10) - 2;
+	int cache_marker_init = (x_start_init >> 10) - 2;
 	if (cache_marker_init < -1)
 		cache_marker_init = -1;
+	
 
 	INT32 v_end = vi_v_start & 0x3ff;
 	INT32 v_sync = vi_v_sync & 0x3ff;
@@ -1172,6 +1175,14 @@ int rdp_update()
 	int lowerfield = serration_pulses && (ispal ? v_start < oldvstart : v_start > oldvstart);
 	
 	
+	
+	
+	
+	
+	
+
+	
+
 	
 	
 	
@@ -1279,13 +1290,17 @@ int rdp_update()
 	
 	
 	
+	
+	
+	
 	int minhpass = h_start_clamped ? 0 : 8;
-	int maxhpass =  hres_clamped ? hres : (hres - 8);
+	int maxhpass =  hres_clamped ? hres : (hres - 7);
 
 	if (hres <= 0 || vres <= 0 || (!(vitype & 2) && prevwasblank))
 	{
 		return 0;
 	}
+	
 	
 	
 	
@@ -1326,6 +1341,8 @@ int rdp_update()
 	else
 	{
 		prevwasblank = 0;
+
+		
 		
 		
 		if (h_start > 0 && h_start < PRESCALE_WIDTH)
@@ -1405,7 +1422,7 @@ int rdp_update()
 				{
 					
 
-					x_start = (vi_x_scale >> 16) & 0xfff;
+					x_start = x_start_init;
 
 					if ((y_start >> 10) == (prevy + 1) && j)
 					{
@@ -1607,7 +1624,7 @@ int rdp_update()
 #endif
 						adjust_brightness(&r, &g, &b, slowbright);
 
-						if (i >= minhpass && i <= maxhpass)
+						if (i >= minhpass && i < maxhpass)
 							d[i] = (r << 16) | (g << 8) | b;
 						else
 							d[i] = 0;
