@@ -70,6 +70,7 @@ UINT32 ptr_onstart = 0;
 
 extern FILE* zeldainfo;
 
+UINT32 internal_vi_v_current_line = 0;
 UINT32 old_vi_origin = 0;
 INT32 oldvstart = 1337;
 UINT32 oldhstart = 0;
@@ -1173,19 +1174,6 @@ int rdp_update()
 	INT32 v_sync = vi_v_sync & 0x3ff;
 
 	
-	int lowerfield = serration_pulses && (ispal ? v_start < oldvstart : v_start > oldvstart);
-	
-	
-	
-	
-	
-	
-	
-
-	
-
-	
-	
 	
 	
 
@@ -1198,10 +1186,29 @@ int rdp_update()
 	
 	
 	
-	if (serration_pulses && v_start == oldvstart)
-	{
-		serration_pulses = lowerfield = 0;
-	}
+	
+	
+	
+	
+	
+	
+	int validinterlace = (vitype & 2) && serration_pulses;
+	if (!validinterlace)
+		internal_vi_v_current_line = 0;
+	int lowerfield = validinterlace && !(internal_vi_v_current_line & 1);
+	if (validinterlace)
+		internal_vi_v_current_line ^= 1;
+
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
 
 	int linecount = serration_pulses ? (pitchindwords << 1) : pitchindwords;
 	int lineshifter = serration_pulses ? 0 : 1;
