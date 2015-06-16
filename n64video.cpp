@@ -529,7 +529,7 @@ void bytefill_tmem(char byte);
 static INT32 k0_tf = 0, k1_tf = 0, k2_tf = 0, k3_tf = 0;
 static INT32 k4 = 0, k5 = 0;
 static INT32 lod_frac = 0;
-UINT32 DebugMode = 0, DebugMode2 = 0;
+UINT32 DebugMode = 0, DebugMode2 = 0; INT32 DebugMode3 = 0;
 int debugcolor = 0;
 UINT8 hidden_bits[0x400000];
 struct {UINT32 shift; UINT32 add;} z_dec_table[8] = {
@@ -1982,7 +1982,6 @@ STRICTINLINE void combiner_1cycle(int adseed, UINT32* curpixel_cvg)
 			pixel_color.a = 0xff;
 	}
 	
-
 	shade_color.a += adseed;
 	if (shade_color.a & 0x100)
 		shade_color.a = 0xff;
@@ -7408,10 +7407,6 @@ static void rdp_tri_texshade_z(UINT32 w1, UINT32 w2)
 	INT32 ewdata[44];
 	memcpy(&ewdata[0], &rdp_cmd_data[rdp_cmd_cur], 44 * sizeof(INT32));
 
-	
-	
-	
-
 	edgewalker_for_prims(ewdata);
 }
 
@@ -7566,7 +7561,6 @@ static void rdp_sync_full(UINT32 w1, UINT32 w2)
 	
 	
 	
-
 	
 	
 	
@@ -8368,12 +8362,15 @@ STRICTINLINE void compute_cvg_flip(INT32 scanline)
 				for (int k = minorcurint; k <= purgeend; k++)
 					cvgbuf[k] &= ~fmaskshifted;
 
-				if (minorcurint != majorcurint)
+				
+				
+				
+				if (minorcurint > majorcurint)
 				{
 					cvgbuf[minorcurint] |= (rightcvghex(minorcur, fmask) << maskshift);
 					cvgbuf[majorcurint] |= (leftcvghex(majorcur, fmask) << maskshift);
 				}
-				else
+				else if (minorcurint == majorcurint)
 				{
 					samecvg = rightcvghex(minorcur, fmask) & leftcvghex(majorcur, fmask);
 					cvgbuf[majorcurint] |= (samecvg << maskshift);
@@ -8387,6 +8384,8 @@ STRICTINLINE void compute_cvg_flip(INT32 scanline)
 
 		}
 	}
+
+
 }
 
 STRICTINLINE void compute_cvg_noflip(INT32 scanline)
@@ -8421,12 +8420,12 @@ STRICTINLINE void compute_cvg_noflip(INT32 scanline)
 				for (int k = majorcurint; k <= purgeend; k++)
 					cvgbuf[k] &= ~fmaskshifted;
 
-				if (minorcurint != majorcurint)
+				if (majorcurint > minorcurint)
 				{
 					cvgbuf[minorcurint] |= (leftcvghex(minorcur, fmask) << maskshift);
 					cvgbuf[majorcurint] |= (rightcvghex(majorcur, fmask) << maskshift);
 				}
-				else
+				else if (minorcurint == majorcurint)
 				{
 					samecvg = leftcvghex(minorcur, fmask) & rightcvghex(majorcur, fmask);
 					cvgbuf[majorcurint] |= (samecvg << maskshift);
