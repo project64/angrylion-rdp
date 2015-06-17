@@ -624,6 +624,7 @@ INT32 ge_two_table[128];
 INT32 log2table[256];
 INT32 tcdiv_table[0x8000];
 UINT8 bldiv_hwaccurate_table[0x8000];
+UINT16 deltaz_comparator_lut[0x10000];
 INT32 clamp_t_diff[8];
 INT32 clamp_s_diff[8];
 CVtcmaskDERIVATIVE cvarray[0x100];
@@ -2294,6 +2295,24 @@ INLINE void precalculate_everything(void)
 		}
 		bldiv_hwaccurate_table[i] = res;
 	}
+
+	
+	
+	
+	
+	deltaz_comparator_lut[0] = 0;
+	for (i = 1; i < 0x10000; i++)
+	{
+		for (k = 15; k >= 0; k--)
+		{
+			if (i & (1 << k))
+			{
+				deltaz_comparator_lut[i] = 1 << k;
+				break;
+			}
+		}
+	}
+
 }
 
 INLINE void SET_BLENDER_INPUT(int cycle, int which, INT32 **input_r, INT32 **input_g, INT32 **input_b, INT32 **input_a, int a, int b)
@@ -8365,6 +8384,7 @@ STRICTINLINE void compute_cvg_flip(INT32 scanline)
 				
 				
 				
+				
 				if (minorcurint > majorcurint)
 				{
 					cvgbuf[minorcurint] |= (rightcvghex(minorcur, fmask) << maskshift);
@@ -8975,20 +8995,22 @@ STRICTINLINE UINT32 z_compare(UINT32 zcurpixel, UINT32 sz, UINT16 dzpix, int dzp
 			{
 				dzmemmodifier = 16 >> precision_factor;
 				dzmem <<= 1;
-				if (dzmem <= dzmemmodifier)
+				if (dzmem < dzmemmodifier)
 					dzmem = dzmemmodifier;
+				
 			}
 			else
 			{
 				force_coplanar = 1;
-				dzmem <<= 1;
+				dzmem = 0xffff;
 			}
-			
 		}
-		if (dzmem > 0x8000)
-			dzmem = 0xffff;
 
-		UINT32 dznew = (dzmem > dzpix) ? dzmem : (UINT32)dzpix;
+		
+
+		
+		UINT32 dznew = (UINT32)deltaz_comparator_lut[dzpix | dzmem];
+
 		UINT32 dznotshift = dznew;
 		dznew <<= 3;
 		
@@ -9107,8 +9129,10 @@ STRICTINLINE INT32 normalize_dzpix(INT32 sum)
 		return 0x8000;
 	if (!(sum & 0xffff))
 		return 1;
+
 	if (sum == 1)
 		return 3;
+
 	for(int count = 0x2000; count > 0; count >>= 1)
     {
       if (sum & count)
