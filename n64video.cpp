@@ -470,11 +470,11 @@ STRICTINLINE UINT32 z_compare(UINT32 zcurpixel, UINT32 sz, UINT16 dzpix, int dzp
 STRICTINLINE int finalize_spanalpha(UINT32 blend_en, UINT32 curpixel_cvg, UINT32 curpixel_memcvg);
 STRICTINLINE INT32 normalize_dzpix(INT32 sum);
 STRICTINLINE INT32 CLIP(INT32 value,INT32 min,INT32 max);
-STRICTINLINE void video_filter16(int* r, int* g, int* b, UINT32 fboffset, UINT32 num, UINT32 hres, UINT32 centercvg);
-STRICTINLINE void video_filter32(int* endr, int* endg, int* endb, UINT32 fboffset, UINT32 num, UINT32 hres, UINT32 centercvg);
+STRICTINLINE void video_filter16(int* r, int* g, int* b, UINT32 fboffset, UINT32 num, UINT32 hres, UINT32 centercvg, UINT32 fetchstate);
+STRICTINLINE void video_filter32(int* endr, int* endg, int* endb, UINT32 fboffset, UINT32 num, UINT32 hres, UINT32 centercvg, UINT32 fetchstate);
 STRICTINLINE void divot_filter(CCVG* final, CCVG centercolor, CCVG leftcolor, CCVG rightcolor);
-STRICTINLINE void restore_filter16(int* r, int* g, int* b, UINT32 fboffset, UINT32 num, UINT32 hres);
-STRICTINLINE void restore_filter32(int* r, int* g, int* b, UINT32 fboffset, UINT32 num, UINT32 hres);
+STRICTINLINE void restore_filter16(int* r, int* g, int* b, UINT32 fboffset, UINT32 num, UINT32 hres, UINT32 fetchstate);
+STRICTINLINE void restore_filter32(int* r, int* g, int* b, UINT32 fboffset, UINT32 num, UINT32 hres, UINT32 fetchstate);
 STRICTINLINE void gamma_filters(int* r, int* g, int* b, int gamma_and_dither);
 STRICTINLINE void adjust_brightness(int* r, int* g, int* b, int brightcoeff);
 INLINE void clearscreen(UINT32 x0,UINT32 y0, UINT32 x1, UINT32 y1, UINT32 white);
@@ -504,8 +504,8 @@ INLINE void get_dither_only(int x, int y, int* cdith, int* adith);
 INLINE void get_dither_nothing(int x, int y, int* cdith, int* adith);
 STRICTINLINE void vi_vl_lerp(CCVG* up, CCVG down, UINT32 frac);
 STRICTINLINE void rgbaz_correct_clip(int offx, int offy, int r, int g, int b, int a, int* z, UINT32 curpixel_cvg);
-STRICTINLINE void vi_fetch_filter16(CCVG* res, UINT32 fboffset, UINT32 cur_x, UINT32 fsaa, UINT32 dither_filter, UINT32 vres);
-STRICTINLINE void vi_fetch_filter32(CCVG* res, UINT32 fboffset, UINT32 cur_x, UINT32 fsaa, UINT32 dither_filter, UINT32 vres);
+STRICTINLINE void vi_fetch_filter16(CCVG* res, UINT32 fboffset, UINT32 cur_x, UINT32 fsaa, UINT32 dither_filter, UINT32 vres, UINT32 fetchstate);
+STRICTINLINE void vi_fetch_filter32(CCVG* res, UINT32 fboffset, UINT32 cur_x, UINT32 fsaa, UINT32 dither_filter, UINT32 vres, UINT32 fetchstate);
 int IsBadPtrW32(void *ptr, UINT32 bytes);
 UINT32 vi_integer_sqrt(UINT32 a);
 void deduce_derivatives(void);
@@ -544,7 +544,7 @@ struct {UINT32 shift; UINT32 add;} z_dec_table[8] = {
 };
 
 
-static void (*vi_fetch_filter_func[2])(CCVG*, UINT32, UINT32, UINT32, UINT32, UINT32) = 
+static void (*vi_fetch_filter_func[2])(CCVG*, UINT32, UINT32, UINT32, UINT32, UINT32, UINT32) = 
 {
 	vi_fetch_filter16, vi_fetch_filter32
 };
@@ -1072,7 +1072,6 @@ int rdp_update()
 	
 
 	
-	
 
 	
 	
@@ -1081,16 +1080,6 @@ int rdp_update()
 
 	
 	
-	
-	
-
-	
-
-	
-	
-
-	
-
 
 	
 
@@ -1124,7 +1113,7 @@ int rdp_update()
 	
 	
 
-	void (*vi_fetch_filter_ptr)(CCVG*, UINT32, UINT32, UINT32, UINT32, UINT32) = vi_fetch_filter_func[vitype & 1];
+	void (*vi_fetch_filter_ptr)(CCVG*, UINT32, UINT32, UINT32, UINT32, UINT32, UINT32) = vi_fetch_filter_func[vitype & 1];
 
 	int ispal = (vi_v_sync & 0x3ff) > 550;
 
@@ -1251,13 +1240,14 @@ int rdp_update()
 		return 0;
 	vactivelines >>= lineshifter;
 
-	int validh = (hres >=0 && h_start < PRESCALE_WIDTH);
+	int validh = (hres > 0 && h_start < PRESCALE_WIDTH);
 
+	
 	
 	
 	UINT32 frame_buffer = vi_origin & 0xffffff;
 	
-	UINT32 pixels = 0, nextpixels = 0;
+	UINT32 pixels = 0, nextpixels = 0, fetchbugstate = 0;
 	CCVG color, nextcolor, scancolor, scannextcolor;
 	int r = 0, g = 0, b = 0;
 	int xfrac = 0, yfrac = 0; 
@@ -1274,7 +1264,7 @@ int rdp_update()
 	UINT8 cur_cvg = 0;
 
 	int lerping = 0;
-	UINT32 prevy = 0;
+	UINT32 prevy = 0, nexty = y_start + y_add;
 	CCVG* tempccvgptr;
 	viaa_cache = &viaa_array[0];
 	viaa_cache_next = &viaa_array[0xa10];
@@ -1305,15 +1295,10 @@ int rdp_update()
 	int minhpass = h_start_clamped ? 0 : 8;
 	int maxhpass =  hres_clamped ? hres : (hres - 7);
 
-	if (hres <= 0 || vres <= 0 || (!(vitype & 2) && prevwasblank))
+	if (!(vitype & 2) && prevwasblank)
 	{
 		return 0;
 	}
-	
-	
-	
-	
-	
 
 	
 	
@@ -1333,6 +1318,12 @@ int rdp_update()
 		fatalerror("Lock failed with DirectDraw error %x", res);
 
 	PreScale = (INT32*)ddsd.lpSurface;
+
+	
+	
+	
+	
+	
 
 	
 	
@@ -1364,18 +1355,36 @@ int rdp_update()
 			for (i = 0; i < vactivelines; i++)
 				memset(&PreScale[i * pitchindwords + h_end], 0, hrightblank * sizeof(UINT32));
 		}
+
 		for (i = 0; i < ((v_start << twolines) + (lowerfield ? 1 : 0)); i++)
 		{
 			if (tvfadeoutstate[i])
+			{
 				tvfadeoutstate[i]--;
-			if (!tvfadeoutstate[i] && validh)
-				memset(&PreScale[i * pitchindwords + h_start], 0, hres * sizeof(UINT32));
+				if (!tvfadeoutstate[i])
+				{
+					if (validh)
+						memset(&PreScale[i * pitchindwords + h_start], 0, hres * sizeof(UINT32));
+					else
+						memset(&PreScale[i * pitchindwords], 0, PRESCALE_WIDTH * sizeof(UINT32));
+				}
+			}
 		}
 		if (!serration_pulses)
 		{
 			for(j = 0; j < vres; j++)
 			{
-				tvfadeoutstate[i] = 2;
+				if (validh)
+					tvfadeoutstate[i] = 2;
+				else if (tvfadeoutstate[i])
+				{
+					tvfadeoutstate[i]--;
+					if (!tvfadeoutstate[i])
+					{
+						memset(&PreScale[i * pitchindwords], 0, PRESCALE_WIDTH * sizeof(UINT32));
+					}
+				}
+
 				i++;
 			}
 		}
@@ -1383,11 +1392,25 @@ int rdp_update()
 		{
 			for(j = 0; j < vres; j++)
 			{
-				tvfadeoutstate[i] = 2;
+				if (validh)
+					tvfadeoutstate[i] = 2;
+				else if (tvfadeoutstate[i])
+				{
+					tvfadeoutstate[i]--;
+					if (!tvfadeoutstate[i])
+						memset(&PreScale[i * pitchindwords], 0, PRESCALE_WIDTH * sizeof(UINT32));
+				}
+
 				if (tvfadeoutstate[i + 1])
+				{
 					tvfadeoutstate[i + 1]--;
-				if (!tvfadeoutstate[i + 1] && validh)
-					memset(&PreScale[(i + 1) * pitchindwords + h_start], 0, hres * sizeof(UINT32));
+					if (!tvfadeoutstate[i + 1])
+						if (validh)
+							memset(&PreScale[(i + 1) * pitchindwords + h_start], 0, hres * sizeof(UINT32));
+						else
+							memset(&PreScale[(i + 1) * pitchindwords], 0, PRESCALE_WIDTH * sizeof(UINT32));
+				}
+
 				i += 2;
 			}
 		}
@@ -1395,8 +1418,11 @@ int rdp_update()
 		{
 			if (tvfadeoutstate[i])
 				tvfadeoutstate[i]--;
-			if (!tvfadeoutstate[i] && validh)
-				memset(&PreScale[i * pitchindwords + h_start], 0, hres * sizeof(UINT32));
+			if (!tvfadeoutstate[i])
+				if (validh)
+					memset(&PreScale[i * pitchindwords + h_start], 0, hres * sizeof(UINT32));
+				else
+					memset(&PreScale[i * pitchindwords], 0, PRESCALE_WIDTH * sizeof(UINT32));
 		}
  	}
 
@@ -1429,11 +1455,10 @@ int rdp_update()
 			{
 				for (j = 0; j < vres; j++)
 				{
-					
 
 					x_start = x_start_init;
 
-					if ((y_start >> 10) == (prevy + 1) && j)
+					if (y_add == 0x400 && j)
 					{
 						cache_marker = cache_next_marker;
 						cache_next_marker = cache_marker_init;
@@ -1450,7 +1475,7 @@ int rdp_update()
 							divot_cache_next = tempccvgptr;
 						}
 					}
-					else if ((y_start >> 10) != prevy || !j)
+					else
 					{
 						cache_marker = cache_next_marker = cache_marker_init;
 						if (divot)
@@ -1463,7 +1488,12 @@ int rdp_update()
 					prevy = y_start >> 10;
 					yfrac = (y_start >> 5) & 0x1f;
 					pixels = vi_width_low * prevy;
-					nextpixels = pixels + vi_width_low;					
+					nextpixels = vi_width_low + pixels;
+
+					if (prevy == (nexty >> 10))
+						fetchbugstate = 2;
+					else
+						fetchbugstate >>= 1;
 
 					for (i = 0; i < hres; i++)
 					{
@@ -1477,6 +1507,7 @@ int rdp_update()
 						next_x = pixels + next_line_x;
 						far_x = pixels + far_line_x;
 
+						
 						scan_x = nextpixels + line_x;
 						prev_scan_x = nextpixels + prev_line_x;
 						next_scan_x = nextpixels + next_line_x;
@@ -1495,39 +1526,39 @@ int rdp_update()
 						
 						if (prev_line_x > cache_marker)
 						{
-							vi_fetch_filter_ptr(&viaa_cache[prev_line_x], frame_buffer, prev_x, fsaa, dither_filter, vres);
-							vi_fetch_filter_ptr(&viaa_cache[line_x], frame_buffer, cur_x, fsaa, dither_filter, vres);
-							vi_fetch_filter_ptr(&viaa_cache[next_line_x], frame_buffer, next_x, fsaa, dither_filter, vres);
+							vi_fetch_filter_ptr(&viaa_cache[prev_line_x], frame_buffer, prev_x, fsaa, dither_filter, vres, 0);
+							vi_fetch_filter_ptr(&viaa_cache[line_x], frame_buffer, cur_x, fsaa, dither_filter, vres, 0);
+							vi_fetch_filter_ptr(&viaa_cache[next_line_x], frame_buffer, next_x, fsaa, dither_filter, vres, 0);
 							cache_marker = next_line_x;
 						}
 						else if (line_x > cache_marker)
 						{
-							vi_fetch_filter_ptr(&viaa_cache[line_x], frame_buffer, cur_x, fsaa, dither_filter, vres);
-							vi_fetch_filter_ptr(&viaa_cache[next_line_x], frame_buffer, next_x, fsaa, dither_filter, vres);
+							vi_fetch_filter_ptr(&viaa_cache[line_x], frame_buffer, cur_x, fsaa, dither_filter, vres, 0);
+							vi_fetch_filter_ptr(&viaa_cache[next_line_x], frame_buffer, next_x, fsaa, dither_filter, vres, 0);
 							cache_marker = next_line_x;
 						}
 						else if (next_line_x > cache_marker)
 						{
-							vi_fetch_filter_ptr(&viaa_cache[next_line_x], frame_buffer, next_x, fsaa, dither_filter, vres);
+							vi_fetch_filter_ptr(&viaa_cache[next_line_x], frame_buffer, next_x, fsaa, dither_filter, vres, 0);
 							cache_marker = next_line_x;
 						}
 
 						if (prev_line_x > cache_next_marker)
 						{
-							vi_fetch_filter_ptr(&viaa_cache_next[prev_line_x], frame_buffer, prev_scan_x, fsaa, dither_filter, vres);
-							vi_fetch_filter_ptr(&viaa_cache_next[line_x], frame_buffer, scan_x, fsaa, dither_filter, vres);
-							vi_fetch_filter_ptr(&viaa_cache_next[next_line_x], frame_buffer, next_scan_x, fsaa, dither_filter, vres);
+							vi_fetch_filter_ptr(&viaa_cache_next[prev_line_x], frame_buffer, prev_scan_x, fsaa, dither_filter, vres, fetchbugstate);
+							vi_fetch_filter_ptr(&viaa_cache_next[line_x], frame_buffer, scan_x, fsaa, dither_filter, vres, fetchbugstate);
+							vi_fetch_filter_ptr(&viaa_cache_next[next_line_x], frame_buffer, next_scan_x, fsaa, dither_filter, vres, fetchbugstate);
 							cache_next_marker = next_line_x;
 						}
 						else if (line_x > cache_next_marker)
 						{
-							vi_fetch_filter_ptr(&viaa_cache_next[line_x], frame_buffer, scan_x, fsaa, dither_filter, vres);
-							vi_fetch_filter_ptr(&viaa_cache_next[next_line_x], frame_buffer, next_scan_x, fsaa, dither_filter, vres);
+							vi_fetch_filter_ptr(&viaa_cache_next[line_x], frame_buffer, scan_x, fsaa, dither_filter, vres, fetchbugstate);
+							vi_fetch_filter_ptr(&viaa_cache_next[next_line_x], frame_buffer, next_scan_x, fsaa, dither_filter, vres, fetchbugstate);
 							cache_next_marker = next_line_x;
 						}
 						else if (next_line_x > cache_next_marker)
 						{
-							vi_fetch_filter_ptr(&viaa_cache_next[next_line_x], frame_buffer, next_scan_x, fsaa, dither_filter, vres);
+							vi_fetch_filter_ptr(&viaa_cache_next[next_line_x], frame_buffer, next_scan_x, fsaa, dither_filter, vres, fetchbugstate);
 							cache_next_marker = next_line_x;
 						}
 						
@@ -1536,13 +1567,13 @@ int rdp_update()
 						{
 							if (far_line_x > cache_marker)
 							{
-								vi_fetch_filter_ptr(&viaa_cache[far_line_x], frame_buffer, far_x, fsaa, dither_filter, vres);
+								vi_fetch_filter_ptr(&viaa_cache[far_line_x], frame_buffer, far_x, fsaa, dither_filter, vres, 0);
 								cache_marker = far_line_x;
 							}
 
 							if (far_line_x > cache_next_marker)
 							{
-								vi_fetch_filter_ptr(&viaa_cache_next[far_line_x], frame_buffer, far_scan_x, fsaa, dither_filter, vres);
+								vi_fetch_filter_ptr(&viaa_cache_next[far_line_x], frame_buffer, far_scan_x, fsaa, dither_filter, vres, fetchbugstate);
 								cache_next_marker = far_line_x;
 							}
 
@@ -1646,7 +1677,9 @@ int rdp_update()
 						x_start += x_add;
 
 					}
+
 					y_start += y_add;
+					nexty += y_add;
 					
 					
 				}
@@ -1659,9 +1692,6 @@ int rdp_update()
 	res = IDirectDrawSurface_Unlock(lpddsback, 0);
 	if (res != DD_OK && res != DDERR_GENERIC && res != DDERR_SURFACELOST)
 		fatalerror("Couldn't unlock the offscreen surface with DirectDraw error %x", res);
-	
-	
-
 	
 	
 
@@ -1695,7 +1725,7 @@ int rdp_update()
 }
 
 
-STRICTINLINE void vi_fetch_filter16(CCVG* res, UINT32 fboffset, UINT32 cur_x, UINT32 fsaa, UINT32 dither_filter, UINT32 vres)
+STRICTINLINE void vi_fetch_filter16(CCVG* res, UINT32 fboffset, UINT32 cur_x, UINT32 fsaa, UINT32 dither_filter, UINT32 vres, UINT32 fetchstate)
 {
 	int r, g, b;
 	UINT32 idx = (fboffset >> 1) + cur_x;
@@ -1720,11 +1750,11 @@ STRICTINLINE void vi_fetch_filter16(CCVG* res, UINT32 fboffset, UINT32 cur_x, UI
 	if (cur_cvg == 7)
 	{
 		if (dither_filter)
-			restore_filter16(&r, &g, &b, fboffset, cur_x, fbw);
+			restore_filter16(&r, &g, &b, fboffset, cur_x, fbw, fetchstate);
 	}
 	else
 	{
-		video_filter16(&r, &g, &b, fboffset, cur_x, fbw, cur_cvg);
+		video_filter16(&r, &g, &b, fboffset, cur_x, fbw, cur_cvg, fetchstate);
 	}
 
 
@@ -1734,7 +1764,7 @@ STRICTINLINE void vi_fetch_filter16(CCVG* res, UINT32 fboffset, UINT32 cur_x, UI
 	res->cvg = cur_cvg;
 }
 
-STRICTINLINE void vi_fetch_filter32(CCVG* res, UINT32 fboffset, UINT32 cur_x, UINT32 fsaa, UINT32 dither_filter, UINT32 vres)
+STRICTINLINE void vi_fetch_filter32(CCVG* res, UINT32 fboffset, UINT32 cur_x, UINT32 fsaa, UINT32 dither_filter, UINT32 vres, UINT32 fetchstate)
 {
 	int r, g, b;
 	UINT32 pix, addr = (fboffset >> 2) + cur_x;
@@ -1753,11 +1783,11 @@ STRICTINLINE void vi_fetch_filter32(CCVG* res, UINT32 fboffset, UINT32 cur_x, UI
 	if (cur_cvg == 7)
 	{
 		if (dither_filter)
-			restore_filter32(&r, &g, &b, fboffset, cur_x, fbw);
+			restore_filter32(&r, &g, &b, fboffset, cur_x, fbw, fetchstate);
 	}
 	else
 	{
-		video_filter32(&r, &g, &b, fboffset, cur_x, fbw, cur_cvg);
+		video_filter32(&r, &g, &b, fboffset, cur_x, fbw, cur_cvg, fetchstate);
 	}
 
 	res->r = r;
@@ -2296,6 +2326,8 @@ INLINE void precalculate_everything(void)
 		bldiv_hwaccurate_table[i] = res;
 	}
 
+	
+	
 	
 	
 	
@@ -8950,6 +8982,7 @@ STRICTINLINE UINT32 dz_decompress(UINT32 dz_compressed)
 	return (1 << dz_compressed);
 }
 
+
 STRICTINLINE UINT32 dz_compress(UINT32 value)
 {
 	int j = 0;
@@ -9153,7 +9186,7 @@ STRICTINLINE INT32 CLIP(INT32 value,INT32 min,INT32 max)
 }
 
 
-STRICTINLINE void video_filter16(int* endr, int* endg, int* endb, UINT32 fboffset, UINT32 num, UINT32 hres, UINT32 centercvg)
+STRICTINLINE void video_filter16(int* endr, int* endg, int* endb, UINT32 fboffset, UINT32 num, UINT32 hres, UINT32 centercvg, UINT32 fetchbugstate)
 {
 
 
@@ -9181,16 +9214,35 @@ STRICTINLINE void video_filter16(int* endr, int* endg, int* endb, UINT32 fboffse
 
 	
 	UINT32 idx = (fboffset >> 1) + num;
-	UINT32 leftup = idx - hres - 1;
-	UINT32 rightup = idx - hres + 1;
+
 	UINT32 toleft = idx - 2;
 	UINT32 toright = idx + 2;
-	UINT32 leftdown = idx + hres - 1;
-	UINT32 rightdown = idx + hres + 1;
+	
+	UINT32 leftup, rightup, leftdown, rightdown;
+
+	leftup = idx - hres - 1;
+	rightup = idx - hres + 1;
+
+	
+	
+	
+	
+	
+	
+	if (fetchbugstate != 1)
+	{
+		leftdown = idx + hres - 1;
+		rightdown = idx + hres + 1;
+	}
+	else
+	{
+		leftdown = toleft;
+		rightdown = toright;
+	}
 
 
 #define VI_ANDER(x) {													\
-			PAIRREAD16(pix, hidval, x);									\
+			PAIRREAD16(pix, hidval, (x));									\
 			if (hidval == 3 && (pix & 1))								\
 			{															\
 				backr[numoffull] = GET_HI(pix);							\
@@ -9199,7 +9251,7 @@ STRICTINLINE void video_filter16(int* endr, int* endg, int* endb, UINT32 fboffse
 				numoffull++;											\
 			}															\
 }
-	
+
 	VI_ANDER(leftup);
 	VI_ANDER(rightup);
 	VI_ANDER(toleft);
@@ -9237,7 +9289,7 @@ STRICTINLINE void video_filter16(int* endr, int* endg, int* endb, UINT32 fboffse
 	
 }
 
-STRICTINLINE void video_filter32(int* endr, int* endg, int* endb, UINT32 fboffset, UINT32 num, UINT32 hres, UINT32 centercvg)
+STRICTINLINE void video_filter32(int* endr, int* endg, int* endb, UINT32 fboffset, UINT32 num, UINT32 hres, UINT32 centercvg, UINT32 fetchbugstate)
 {
 
 	UINT32 penumaxr, penumaxg, penumaxb, penuminr, penuming, penuminb;
@@ -9255,12 +9307,25 @@ STRICTINLINE void video_filter32(int* endr, int* endg, int* endb, UINT32 fboffse
 	backb[0] = b;
 
 	UINT32 idx = (fboffset >> 2) + num;
-	UINT32 leftup = idx - hres - 1;
-	UINT32 rightup = idx - hres + 1;
+
 	UINT32 toleft = idx - 2;
 	UINT32 toright = idx + 2;
-	UINT32 leftdown = idx + hres - 1;
-	UINT32 rightdown = idx + hres + 1;
+
+	UINT32 leftup, rightup, leftdown, rightdown;
+
+	leftup = idx - hres - 1;
+	rightup = idx - hres + 1;
+
+	if (fetchbugstate != 1)
+	{
+		leftdown = idx + hres - 1;
+		rightdown = idx + hres + 1;
+	}
+	else
+	{
+		leftdown = toleft;
+		rightdown = toright;
+	}
 
 #define VI_ANDER32(x) {													\
 			RREADIDX32(pix, (x));										\
@@ -9349,15 +9414,28 @@ STRICTINLINE void divot_filter(CCVG* final, CCVG centercolor, CCVG leftcolor, CC
 		final->b = rightb;
 }
 
-STRICTINLINE void restore_filter16(int* r, int* g, int* b, UINT32 fboffset, UINT32 num, UINT32 hres)
+STRICTINLINE void restore_filter16(int* r, int* g, int* b, UINT32 fboffset, UINT32 num, UINT32 hres, UINT32 fetchbugstate)
 {
 
 
 	UINT32 idx = (fboffset >> 1) + num;
-	UINT32 leftuppix = idx - hres - 1;
-	UINT32 leftdownpix = idx + hres - 1;
+
 	UINT32 toleftpix = idx - 1;
-	UINT32 maxpix = idx + hres + 1;
+
+	UINT32 leftuppix, leftdownpix, maxpix;
+
+	leftuppix = idx - hres - 1;
+
+	if (fetchbugstate != 1)
+	{		
+		leftdownpix = idx + hres - 1;
+		maxpix = idx + hres + 1;
+	}
+	else
+	{
+		leftdownpix = toleftpix;
+		maxpix = toleftpix + 2;
+	}
 
 	int rend = *r;
 	int gend = *g;
@@ -9424,13 +9502,26 @@ STRICTINLINE void restore_filter16(int* r, int* g, int* b, UINT32 fboffset, UINT
 	*b = bend;
 }
 
-STRICTINLINE void restore_filter32(int* r, int* g, int* b, UINT32 fboffset, UINT32 num, UINT32 hres)
+STRICTINLINE void restore_filter32(int* r, int* g, int* b, UINT32 fboffset, UINT32 num, UINT32 hres, UINT32 fetchbugstate)
 {
 	UINT32 idx = (fboffset >> 2) + num;
-	UINT32 leftuppix = idx - hres - 1;
-	UINT32 leftdownpix = idx + hres - 1;
+
 	UINT32 toleftpix = idx - 1;
-	UINT32 maxpix = idx + hres + 1;
+
+	UINT32 leftuppix, leftdownpix, maxpix;
+
+	leftuppix = idx - hres - 1;
+
+	if (fetchbugstate != 1)
+	{		
+		leftdownpix = idx + hres - 1;
+		maxpix = idx +hres + 1;
+	}
+	else
+	{
+		leftdownpix = toleftpix;
+		maxpix = toleftpix + 2;
+	}
 
 	int rend = *r;
 	int gend = *g;

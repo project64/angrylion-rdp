@@ -238,7 +238,10 @@ EXPORT void CALL RomOpen (void)
 	src.top = src.left = 0; 
 	src.bottom = 0;
 	src.right = PRESCALE_WIDTH;
+	
+	
 
+	
 	POINT p;
 	p.x = p.y = 0;
 	GetClientRect(gfx.hWnd, &dst);
@@ -246,6 +249,15 @@ EXPORT void CALL RomOpen (void)
 	OffsetRect(&dst, p.x, p.y);
 	GetClientRect(gfx.hStatusBar, &statusrect);
 	dst.bottom -= statusrect.bottom;
+
+	
+	
+	DDBLTFX ddbltfx;
+	ddbltfx.dwSize = sizeof(DDBLTFX);
+	ddbltfx.dwFillColor = 0;
+	res = IDirectDrawSurface_Blt(lpddsprimary, &dst, 0, 0, DDBLT_COLORFILL | DDBLT_WAIT, &ddbltfx);
+	src.bottom = PRESCALE_HEIGHT;
+	res = IDirectDrawSurface_Blt(lpddsback, &src, 0, 0, DDBLT_COLORFILL | DDBLT_WAIT, &ddbltfx);
 
 	rdp_init();
 
