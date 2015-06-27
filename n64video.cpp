@@ -78,6 +78,7 @@ UINT32 oldsomething = 0;
 UINT32 prevwasblank = 0;
 UINT32 double_stretch = 0;
 int blshifta = 0, blshiftb = 0, pastblshifta = 0, pastblshiftb = 0;
+INT32 pastrawdzmem = 0;
 UINT32 plim = 0x3fffff;
 UINT32 idxlim16 = 0x1fffff;
 UINT32 idxlim32 = 0xfffff;
@@ -1276,6 +1277,7 @@ int rdp_update()
 	UINT32 prescale_ptr = v_start * linecount + h_start + (lowerfield ? pitchindwords : 0);
 	
 
+	
 	
 	
 	
@@ -2498,7 +2500,6 @@ STRICTINLINE int blender_2cycle(UINT32* fr, UINT32* fg, UINT32* fb, int dith, UI
 		{
 			
 			inv_pixel_color.a =  (~(*blender1b_a[0])) & 0xff;
-
 			blender_equation_cycle0_2(&r, &g, &b);
 
 			
@@ -2538,11 +2539,17 @@ STRICTINLINE int blender_2cycle(UINT32* fr, UINT32* fg, UINT32* fb, int dith, UI
 			*fb = b;
 			return 1;
 		}
-		else 
+		else
+		{
+			memory_color = pre_memory_color;
 			return 0;
+		}
 	}
 	else 
+	{
+		memory_color = pre_memory_color;
 		return 0;
+	}
 }
 
 
@@ -5297,7 +5304,6 @@ void render_spans_2cycle_complete(int start, int end, int tilenum, int flip)
 
 		
 		
-
 		
 
 		if (scdiff)
@@ -5365,11 +5371,6 @@ void render_spans_2cycle_complete(int start, int end, int tilenum, int flip)
 				
 			fbread2_ptr(curpixel, &curpixel_memcvg);
 			
-			
-			
-			
-			
-			
 			if (z_compare(zbcur, sz, dzpix, dzpixenc, &blend_en, &prewrap, &curpixel_cvg, curpixel_memcvg))
 			{
 				if (blender_2cycle(&fir, &fig, &fib, cdith, blend_en, prewrap, curpixel_cvg, curpixel_cvbit))
@@ -5377,9 +5378,10 @@ void render_spans_2cycle_complete(int start, int end, int tilenum, int flip)
 					fbwrite_ptr(curpixel, fir, fig, fib, blend_en, curpixel_cvg, curpixel_memcvg);
 					if (other_modes.z_update_en)
 						z_store(zbcur, sz, dzpixenc);
-					
 				}
 			}
+			else
+				memory_color = pre_memory_color;
 			
 			
 			
@@ -5389,11 +5391,6 @@ void render_spans_2cycle_complete(int start, int end, int tilenum, int flip)
 			
 			
 			
-			
-
-			memory_color = pre_memory_color;
-			pastblshifta = blshifta;
-			pastblshiftb = blshiftb;
 			r += drinc;
 			g += dginc;
 			b += dbinc;
@@ -5542,8 +5539,11 @@ void render_spans_2cycle_notexelnext(int start, int end, int tilenum, int flip)
 					
 			get_dither_noise_ptr(x, i, &cdith, &adith);
 			combiner_2cycle(adith, &curpixel_cvg);
-				
+			
 			fbread2_ptr(curpixel, &curpixel_memcvg);
+
+			
+			
 
 			if (z_compare(zbcur, sz, dzpix, dzpixenc, &blend_en, &prewrap, &curpixel_cvg, curpixel_memcvg))
 			{
@@ -5554,10 +5554,9 @@ void render_spans_2cycle_notexelnext(int start, int end, int tilenum, int flip)
 						z_store(zbcur, sz, dzpixenc);
 				}
 			}
-
-			memory_color = pre_memory_color;
-			pastblshifta = blshifta;
-			pastblshiftb = blshiftb;
+			else
+				memory_color = pre_memory_color;
+			
 			s += dsinc;
 			t += dtinc;
 			w += dwinc;
@@ -5718,11 +5717,11 @@ void render_spans_2cycle_notexel1(int start, int end, int tilenum, int flip)
 					if (other_modes.z_update_en)
 						z_store(zbcur, sz, dzpixenc);
 				}
+				
 			}
+			else
+				memory_color = pre_memory_color;
 
-			memory_color = pre_memory_color;
-			pastblshifta = blshifta;
-			pastblshiftb = blshiftb;
 			s += dsinc;
 			t += dtinc;
 			w += dwinc;
@@ -5857,10 +5856,9 @@ void render_spans_2cycle_notex(int start, int end, int tilenum, int flip)
 						z_store(zbcur, sz, dzpixenc);
 				}
 			}
+			else
+				memory_color = pre_memory_color;
 
-			memory_color = pre_memory_color;
-			pastblshifta = blshifta;
-			pastblshiftb = blshiftb;
 			r += drinc;
 			g += dginc;
 			b += dbinc;
@@ -7618,9 +7616,6 @@ static void rdp_sync_full(UINT32 w1, UINT32 w2)
 	
 	
 	
-	
-	
-	
 
 	z64gl_command = 0;
 
@@ -8150,6 +8145,11 @@ void rdp_process_list(void)
 		for (i = 0; i < toload; i ++)
 		{
 			RREADIDX32(rdp_cmd_data[rdp_cmd_ptr], dp_current_al);
+
+			
+			
+			
+
 			rdp_cmd_ptr++;
 			dp_current_al++;
 		}
@@ -8183,7 +8183,7 @@ void rdp_process_list(void)
 		if (LOG_RDP_EXECUTION)
 		{
 			char string[4000];
-			if (1)
+			if (0)
 			{
 			z64gl_command += cmd_length;
 			
@@ -8413,6 +8413,10 @@ STRICTINLINE void compute_cvg_flip(INT32 scanline)
 				for (int k = minorcurint; k <= purgeend; k++)
 					cvgbuf[k] &= ~fmaskshifted;
 
+				
+				
+				
+				
 				
 				
 				
@@ -9018,6 +9022,13 @@ STRICTINLINE UINT32 z_compare(UINT32 zcurpixel, UINT32 sz, UINT16 dzpix, int dzp
 		blshifta = CLIP(dzpixenc - rawdzmem, 0, 4);
 		blshiftb = CLIP(rawdzmem - dzpixenc, 0, 4);
 
+		if (other_modes.cycle_type == CYCLE_TYPE_2)
+		{
+			pastblshifta = CLIP(dzpixenc - pastrawdzmem, 0, 4);
+			pastblshiftb = CLIP(pastrawdzmem - dzpixenc, 0, 4);
+		}
+		pastrawdzmem = rawdzmem;
+
 		int precision_factor = (zval >> 13) & 0xf;
 
 		
@@ -9041,6 +9052,7 @@ STRICTINLINE UINT32 z_compare(UINT32 zcurpixel, UINT32 sz, UINT16 dzpix, int dzp
 
 		
 
+		
 		
 		UINT32 dznew = (UINT32)deltaz_comparator_lut[dzpix | dzmem];
 
@@ -9107,8 +9119,18 @@ STRICTINLINE UINT32 z_compare(UINT32 zcurpixel, UINT32 sz, UINT16 dzpix, int dzp
 	{
 		
 
-		blshifta = CLIP(dzpixenc - 0xf, 0, 4);
-		blshiftb = CLIP(0xf - dzpixenc, 0, 4);
+		blshifta = 0;
+		if (dzpixenc < 0xb)
+			blshiftb = 4;
+		else
+			blshiftb = 0xf - dzpixenc;
+
+		if (other_modes.cycle_type == CYCLE_TYPE_2)
+		{
+			pastblshifta = 0;
+			pastblshiftb = blshiftb;
+		}
+		pastrawdzmem = 0xf;
 
 		int overflow = (curpixel_memcvg + *curpixel_cvg) & 8;
 		*blend_en = other_modes.force_blend || (!overflow && other_modes.antialias_en);
@@ -9223,6 +9245,9 @@ STRICTINLINE void video_filter16(int* endr, int* endg, int* endb, UINT32 fboffse
 	leftup = idx - hres - 1;
 	rightup = idx - hres + 1;
 
+	
+	
+	
 	
 	
 	
@@ -10820,6 +10845,8 @@ STRICTINLINE void get_texel1_1cycle(INT32* s1, INT32* t1, INT32 s, INT32 t, INT3
 
 STRICTINLINE void get_nexttexel0_2cycle(INT32* s1, INT32* t1, INT32 s, INT32 t, INT32 w, INT32 dsinc, INT32 dtinc, INT32 dwinc)
 {
+	
+	
 	INT32 nexts, nextt, nextsw;
 	nextsw = (w + dwinc) >> 16;
 	nexts = (s + dsinc) >> 16;
