@@ -32,10 +32,9 @@ INLINE void fatalerror(const char * err, ...)
 	va_list arg;
 	va_start(arg, err);
 	vsprintf(VsprintfBuffer, err, arg);
-#ifdef WIN32
+#ifdef _WIN32
 	MessageBoxA(0,VsprintfBuffer,"RDP: fatal error",MB_OK);
-#endif
-#ifndef WIN32
+#else
 	printf(VsprintfBuffer);
 #endif
 	va_end(arg);
@@ -48,10 +47,9 @@ INLINE void popmessage(const char* err, ...)
 	va_list arg;
 	va_start(arg, err);
 	vsprintf(VsprintfBuffer, err, arg);
-#ifdef WIN32
+#ifdef _WIN32
 	MessageBoxA(0,VsprintfBuffer,"RDP: warning",MB_OK);
-#endif
-#ifndef WIN32
+#else
 	printf(VsprintfBuffer);
 #endif
 	va_end(arg);
@@ -423,9 +421,9 @@ void render_spans_2cycle_notex(int start, int end, int tilenum, int flip);
 void render_spans_fill(int start, int end, int flip);
 void render_spans_copy(int start, int end, int tilenum, int flip);
 STRICTINLINE void combiner_1cycle(int adseed, UINT32* curpixel_cvg);
-STRICTINLINE void combiner_2cycle(int adseed, UINT32* curpixel_cvg);
+STRICTINLINE void combiner_2cycle(int adseed, UINT32* curpixel_cvg, INT32* acalpha);
 STRICTINLINE int blender_1cycle(UINT32* fr, UINT32* fg, UINT32* fb, int dith, UINT32 blend_en, UINT32 prewrap, UINT32 curpixel_cvg, UINT32 curpixel_cvbit);
-STRICTINLINE int blender_2cycle(UINT32* fr, UINT32* fg, UINT32* fb, int dith, UINT32 blend_en, UINT32 prewrap, UINT32 curpixel_cvg, UINT32 curpixel_cvbit);
+STRICTINLINE int blender_2cycle(UINT32* fr, UINT32* fg, UINT32* fb, int dith, UINT32 blend_en, UINT32 prewrap, UINT32 curpixel_cvg, UINT32 curpixel_cvbit, INT32 acalpha);
 STRICTINLINE void texture_pipeline_cycle(COLOR* TEX, COLOR* prev, INT32 SSS, INT32 SST, UINT32 tilenum, UINT32 cycle);
 STRICTINLINE void tc_pipeline_copy(INT32* sss0, INT32* sss1, INT32* sss2, INT32* sss3, INT32* sst, int tilenum);
 STRICTINLINE void tc_pipeline_load(INT32* sss, INT32* sst, int tilenum, int coord_quad);
@@ -1034,7 +1032,7 @@ int rdp_init()
 
 
 
-#ifdef WIN32
+#ifdef _WIN32
 	if (IsBadPtrW32(&rdram[0x7f0000 >> 2],16))
 	{
 		plim = 0x3fffff;
@@ -1135,7 +1133,7 @@ int rdp_update()
 	
 	
 		
-#ifdef WIN32
+#ifdef _WIN32
 	int slowbright = 0;
 	if (GetAsyncKeyState(0x91))
 		brightness = (brightness + 1) & 15;
@@ -1717,7 +1715,7 @@ int rdp_update()
 				break;
 			}
 		}
-		else if (res != DD_OK && res != DDERR_GENERIC)
+		else if (res != DD_OK && res != DDERR_GENERIC && res != DDERR_OUTOFMEMORY)
 			fatalerror("Scaled blit failed with DirectDraw error %x", res);
 		
 	}
@@ -2030,7 +2028,7 @@ STRICTINLINE void combiner_1cycle(int adseed, UINT32* curpixel_cvg)
 		shade_color.a = 0xff;
 }
 
-STRICTINLINE void combiner_2cycle(int adseed, UINT32* curpixel_cvg)
+STRICTINLINE void combiner_2cycle(int adseed, UINT32* curpixel_cvg, INT32* acalpha)
 {
 	INT32 redkey, greenkey, bluekey, temp;
 	COLOR chromabypass;
@@ -2052,6 +2050,63 @@ STRICTINLINE void combiner_2cycle(int adseed, UINT32* curpixel_cvg)
 		combined_color.a = alpha_combiner_equation(*combiner_alphasub_a[0],*combiner_alphasub_b[0],*combiner_alphamul[0],*combiner_alphaadd[0]);
 	else
 		combined_color.a = special_9bit_exttable[*combiner_alphaadd[0]] & 0x1ff;
+
+	
+	
+	if (other_modes.alpha_compare_en)
+	{
+		if (other_modes.key_en)
+		{
+			redkey = SIGN(combined_color.r, 17);
+			if (redkey >= 0)
+				redkey = (key_width.r << 4) - redkey;
+			else
+				redkey = (key_width.r << 4) + redkey;
+			greenkey = SIGN(combined_color.g, 17);
+			if (greenkey >= 0)
+				greenkey = (key_width.g << 4) - greenkey;
+			else
+				greenkey = (key_width.g << 4) + greenkey;
+			bluekey = SIGN(combined_color.b, 17);
+			if (bluekey >= 0)
+				bluekey = (key_width.b << 4) - bluekey;
+			else
+				bluekey = (key_width.b << 4) + bluekey;
+			keyalpha = (redkey < greenkey) ? redkey : greenkey;
+			keyalpha = (bluekey < keyalpha) ? bluekey : keyalpha;
+			keyalpha = CLIP(keyalpha, 0, 0xff);
+		}
+
+		INT32 preacalpha = special_9bit_clamptable[combined_color.a];
+		if (preacalpha == 0xff)
+			preacalpha = 0x100;
+
+		if (other_modes.cvg_times_alpha)
+			temp = (preacalpha * (*curpixel_cvg) + 4) >> 3;
+
+		if (!other_modes.alpha_cvg_select)
+		{
+			if (!other_modes.key_en)
+			{
+				preacalpha += adseed;
+				if (preacalpha & 0x100)
+					preacalpha = 0xff;
+			}
+			else
+				preacalpha = keyalpha;
+		}
+		else
+		{
+			if (other_modes.cvg_times_alpha)
+				preacalpha = temp;
+			else
+				preacalpha = (*curpixel_cvg) << 5;
+			if (preacalpha > 0xff)
+				preacalpha = 0xff;
+		}
+
+		*acalpha = preacalpha;
+	}
 
 	
 	
@@ -2150,7 +2205,10 @@ STRICTINLINE void combiner_2cycle(int adseed, UINT32* curpixel_cvg)
 	if (other_modes.cvg_times_alpha)
 	{
 		temp = (pixel_color.a * (*curpixel_cvg) + 4) >> 3;
+
 		*curpixel_cvg = (temp >> 5) & 0xf;
+		
+		
 	}
 
 	if (!other_modes.alpha_cvg_select)
@@ -2174,7 +2232,6 @@ STRICTINLINE void combiner_2cycle(int adseed, UINT32* curpixel_cvg)
 			pixel_color.a = 0xff;
 	}
 	
-
 	shade_color.a += adseed;
 	if (shade_color.a & 0x100)
 		shade_color.a = 0xff;
@@ -2508,12 +2565,12 @@ STRICTINLINE int blender_1cycle(UINT32* fr, UINT32* fg, UINT32* fb, int dith, UI
 		return 0;
 }
 
-STRICTINLINE int blender_2cycle(UINT32* fr, UINT32* fg, UINT32* fb, int dith, UINT32 blend_en, UINT32 prewrap, UINT32 curpixel_cvg, UINT32 curpixel_cvbit)
+STRICTINLINE int blender_2cycle(UINT32* fr, UINT32* fg, UINT32* fb, int dith, UINT32 blend_en, UINT32 prewrap, UINT32 curpixel_cvg, UINT32 curpixel_cvbit, INT32 acalpha)
 {
 	int r, g, b, dontblend;
 
 	
-	if (alpha_compare(pixel_color.a))
+	if (alpha_compare(acalpha))
 	{
 		if (other_modes.antialias_en ? (curpixel_cvg) : (curpixel_cvbit))
 		{
@@ -5224,6 +5281,7 @@ void render_spans_2cycle_complete(int start, int end, int tilenum, int flip)
 	UINT32 blend_en;
 	UINT32 prewrap;
 	UINT32 curpixel_cvg, curpixel_cvbit, curpixel_memcvg;
+	INT32 acalpha;
 
 	
 	
@@ -5386,13 +5444,13 @@ void render_spans_2cycle_complete(int start, int end, int tilenum, int flip)
 			rgbaz_correct_clip(offx, offy, sr, sg, sb, sa, &sz, curpixel_cvg);
 					
 			get_dither_noise_ptr(x, i, &cdith, &adith);
-			combiner_2cycle(adith, &curpixel_cvg);
+			combiner_2cycle(adith, &curpixel_cvg, &acalpha);
 				
 			fbread2_ptr(curpixel, &curpixel_memcvg);
 			
 			if (z_compare(zbcur, sz, dzpix, dzpixenc, &blend_en, &prewrap, &curpixel_cvg, curpixel_memcvg))
 			{
-				if (blender_2cycle(&fir, &fig, &fib, cdith, blend_en, prewrap, curpixel_cvg, curpixel_cvbit))
+				if (blender_2cycle(&fir, &fig, &fib, cdith, blend_en, prewrap, curpixel_cvg, curpixel_cvbit, acalpha))
 				{
 					fbwrite_ptr(curpixel, fir, fig, fib, blend_en, curpixel_cvg, curpixel_memcvg);
 					if (other_modes.z_update_en)
@@ -5434,6 +5492,7 @@ void render_spans_2cycle_notexelnext(int start, int end, int tilenum, int flip)
 	UINT32 blend_en;
 	UINT32 prewrap;
 	UINT32 curpixel_cvg, curpixel_cvbit, curpixel_memcvg;
+	INT32 acalpha;
 
 	int tile2 = (tilenum + 1) & 7;
 	int tile1 = tilenum;
@@ -5550,14 +5609,14 @@ void render_spans_2cycle_notexelnext(int start, int end, int tilenum, int flip)
 			tcdiv_ptr(ss, st, sw, &sss, &sst);
 
 			tclod_2cycle_current_simple(&sss, &sst, s, t, w, dsinc, dtinc, dwinc, prim_tile, &tile1, &tile2);
-				
+
 			texture_pipeline_cycle(&texel0_color, &texel0_color, sss, sst, tile1, 0);
 			texture_pipeline_cycle(&texel1_color, &texel0_color, sss, sst, tile2, 1);
 
 			rgbaz_correct_clip(offx, offy, sr, sg, sb, sa, &sz, curpixel_cvg);
 					
 			get_dither_noise_ptr(x, i, &cdith, &adith);
-			combiner_2cycle(adith, &curpixel_cvg);
+			combiner_2cycle(adith, &curpixel_cvg, &acalpha);
 			
 			fbread2_ptr(curpixel, &curpixel_memcvg);
 
@@ -5566,7 +5625,7 @@ void render_spans_2cycle_notexelnext(int start, int end, int tilenum, int flip)
 
 			if (z_compare(zbcur, sz, dzpix, dzpixenc, &blend_en, &prewrap, &curpixel_cvg, curpixel_memcvg))
 			{
-				if (blender_2cycle(&fir, &fig, &fib, cdith, blend_en, prewrap, curpixel_cvg, curpixel_cvbit))
+				if (blender_2cycle(&fir, &fig, &fib, cdith, blend_en, prewrap, curpixel_cvg, curpixel_cvbit, acalpha))
 				{
 					fbwrite_ptr(curpixel, fir, fig, fib, blend_en, curpixel_cvg, curpixel_memcvg);
 					if (other_modes.z_update_en)
@@ -5602,6 +5661,7 @@ void render_spans_2cycle_notexel1(int start, int end, int tilenum, int flip)
 	UINT32 blend_en;
 	UINT32 prewrap;
 	UINT32 curpixel_cvg, curpixel_cvbit, curpixel_memcvg;
+	INT32 acalpha;
 
 	int tile1 = tilenum;
 	int prim_tile = tilenum;
@@ -5717,20 +5777,20 @@ void render_spans_2cycle_notexel1(int start, int end, int tilenum, int flip)
 			tcdiv_ptr(ss, st, sw, &sss, &sst);
 
 			tclod_2cycle_current_notexel1(&sss, &sst, s, t, w, dsinc, dtinc, dwinc, prim_tile, &tile1);
-			
+
 			
 			texture_pipeline_cycle(&texel0_color, &texel0_color, sss, sst, tile1, 0);
 
 			rgbaz_correct_clip(offx, offy, sr, sg, sb, sa, &sz, curpixel_cvg);
 					
 			get_dither_noise_ptr(x, i, &cdith, &adith);
-			combiner_2cycle(adith, &curpixel_cvg);
+			combiner_2cycle(adith, &curpixel_cvg, &acalpha);
 				
 			fbread2_ptr(curpixel, &curpixel_memcvg);
 
 			if (z_compare(zbcur, sz, dzpix, dzpixenc, &blend_en, &prewrap, &curpixel_cvg, curpixel_memcvg))
 			{
-				if (blender_2cycle(&fir, &fig, &fib, cdith, blend_en, prewrap, curpixel_cvg, curpixel_cvbit))
+				if (blender_2cycle(&fir, &fig, &fib, cdith, blend_en, prewrap, curpixel_cvg, curpixel_cvbit, acalpha))
 				{
 					fbwrite_ptr(curpixel, fir, fig, fib, blend_en, curpixel_cvg, curpixel_memcvg);
 					if (other_modes.z_update_en)
@@ -5768,6 +5828,7 @@ void render_spans_2cycle_notex(int start, int end, int tilenum, int flip)
 	UINT32 blend_en;
 	UINT32 prewrap;
 	UINT32 curpixel_cvg, curpixel_cvbit, curpixel_memcvg;
+	INT32 acalpha;
 
 	int drinc, dginc, dbinc, dainc, dzinc;
 	int xinc;
@@ -5862,13 +5923,13 @@ void render_spans_2cycle_notex(int start, int end, int tilenum, int flip)
 			rgbaz_correct_clip(offx, offy, sr, sg, sb, sa, &sz, curpixel_cvg);
 					
 			get_dither_noise_ptr(x, i, &cdith, &adith);
-			combiner_2cycle(adith, &curpixel_cvg);
+			combiner_2cycle(adith, &curpixel_cvg, &acalpha);
 				
 			fbread2_ptr(curpixel, &curpixel_memcvg);
 
 			if (z_compare(zbcur, sz, dzpix, dzpixenc, &blend_en, &prewrap, &curpixel_cvg, curpixel_memcvg))
 			{
-				if (blender_2cycle(&fir, &fig, &fib, cdith, blend_en, prewrap, curpixel_cvg, curpixel_cvbit))
+				if (blender_2cycle(&fir, &fig, &fib, cdith, blend_en, prewrap, curpixel_cvg, curpixel_cvbit, acalpha))
 				{
 					fbwrite_ptr(curpixel, fir, fig, fib, blend_en, curpixel_cvg, curpixel_memcvg);
 					if (other_modes.z_update_en)
@@ -8248,6 +8309,7 @@ STRICTINLINE int alpha_compare(INT32 comb_alpha)
 			threshold = blend_color.a;
 		else
 			threshold = irand() & 0xff;
+		
 
 		if (comb_alpha >= threshold)
 			return 1;
@@ -10100,7 +10162,7 @@ STRICTINLINE void rgbaz_correct_clip(int offx, int offy, int r, int g, int b, in
 
 int IsBadPtrW32(void *ptr, UINT32 bytes)
 {
-#ifdef WIN32
+#ifdef _WIN32
 	SIZE_T dwSize;
     MEMORY_BASIC_INFORMATION meminfo;
     if (!ptr)
@@ -11107,18 +11169,18 @@ const char *aAText[] =
   "SHADE",			"ENV",		"1",				"0",
 };
 
-if (other_modes.cycle_type!=CYCLE_TYPE_1 && other_modes.cycle_type!=CYCLE_TYPE_2)
+if (other_modes.cycle_type != CYCLE_TYPE_1 && other_modes.cycle_type != CYCLE_TYPE_2)
 {
 	popmessage("show_combiner_equation not implemented for cycle type %d",other_modes.cycle_type);
 	return;
 }
 
 if (other_modes.cycle_type == CYCLE_TYPE_1)
-	popmessage("Combiner equation is (%s - %s) * %s + %s | (%s - %s) * %s + %s",saRGBText[combine.sub_a_rgb0],
-	sbRGBText[combine.sub_b_rgb0],mRGBText[combine.mul_rgb0],aRGBText[combine.add_rgb0],
-	saAText[combine.sub_a_a0],sbAText[combine.sub_b_a0],mAText[combine.mul_a0],aAText[combine.add_a0]);
-if (other_modes.cycle_type == CYCLE_TYPE_2)
-	popmessage("Combiner equation is (%s - %s) * %s + %s | (%s - %s) * %s + %s \n (%s - %s) * %s + %s | (%s - %s) * %s + %s",
+	popmessage("Combiner equation of the 2nd cycle is (%s - %s) * %s + %s | (%s - %s) * %s + %s",saRGBText[combine.sub_a_rgb1],
+	sbRGBText[combine.sub_b_rgb1],mRGBText[combine.mul_rgb1],aRGBText[combine.add_rgb1],
+	saAText[combine.sub_a_a1],sbAText[combine.sub_b_a1],mAText[combine.mul_a1],aAText[combine.add_a1]);
+else if (other_modes.cycle_type == CYCLE_TYPE_2)
+	popmessage("Combiner equations are (%s - %s) * %s + %s | (%s - %s) * %s + %s \n (%s - %s) * %s + %s | (%s - %s) * %s + %s",
 	saRGBText[combine.sub_a_rgb0],sbRGBText[combine.sub_b_rgb0],mRGBText[combine.mul_rgb0],
 	aRGBText[combine.add_rgb0],saAText[combine.sub_a_a0],sbAText[combine.sub_b_a0],
 	mAText[combine.mul_a0],aAText[combine.add_a0],
@@ -11143,9 +11205,9 @@ if (other_modes.cycle_type!=CYCLE_TYPE_1 && other_modes.cycle_type!=CYCLE_TYPE_2
 }
 if (other_modes.cycle_type == CYCLE_TYPE_1)
 	popmessage("Blender equation is %s * %s + %s * %s",bRGBText[other_modes.blend_m1a_0],
-	bAText[0][other_modes.blend_m1b_0],bRGBText[other_modes.blend_m2a_0],bAText[0][other_modes.blend_m2b_0]);
-if (other_modes.cycle_type == CYCLE_TYPE_2)
-	popmessage("Blender equation is %s * %s + %s * %s\n%s * %s + %s * %s",
+	bAText[0][other_modes.blend_m1b_0],bRGBText[other_modes.blend_m2a_0],bAText[1][other_modes.blend_m2b_0]);
+else if (other_modes.cycle_type == CYCLE_TYPE_2)
+	popmessage("Blender equations are %s * %s + %s * %s\n%s * %s + %s * %s",
 	bRGBText[other_modes.blend_m1a_0],bAText[0][other_modes.blend_m1b_0],
 	bRGBText[other_modes.blend_m2a_0],bAText[1][other_modes.blend_m2b_0],
 	bRGBText[other_modes.blend_m1a_1],bAText[0][other_modes.blend_m1b_1],
@@ -11485,7 +11547,7 @@ void show_current_cfb(int isviorigin)
 
 	if (hres > 640 || vres > 480)
 		popmessage("hres=%d vres=%d", hres, vres);
-#ifdef WIN32
+#ifdef _WIN32
 	if (hres < 321 && vres < 241 && (GetAsyncKeyState(VK_SCROLL) || double_stretch == 2))
 	{
 		if (double_stretch==1)
