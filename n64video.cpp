@@ -670,7 +670,7 @@ CVtcmaskDERIVATIVE cvarray[0x100];
 
 struct onetime
 {
-	int ntscnolerp, copymstrangecrashes, fillmcrashes, fillmbitcrashes, syncfullcrash;
+	int nolerp, copymstrangecrashes, fillmcrashes, fillmbitcrashes, syncfullcrash, vbusclock;
 } onetimewarnings;
 
 extern INT32 pitchindwords;
@@ -1106,9 +1106,12 @@ int rdp_update()
 	int vitype = vi_control & 3;
 	int serration_pulses = (vi_control >> 6) & 1;
 	int gamma_and_dither = (gamma << 1) | gamma_dither;
-	if ((vi_control >> 5) & 1)
+	if (((vi_control >> 5) & 1) && !onetimewarnings.vbusclock)
+	{
 		popmessage("rdp_update: vbus_clock_enable bit set in VI_CONTROL_REG register. Never run this code on your N64! It's rumored that turning this bit on\
 					will result in permanent damage to the hardware! Emulation will now continue.\n");
+		onetimewarnings.vbusclock = 1;
+	}
 
 	
 	
@@ -1117,13 +1120,6 @@ int rdp_update()
 	void (*vi_fetch_filter_ptr)(CCVG*, UINT32, UINT32, UINT32, UINT32, UINT32, UINT32) = vi_fetch_filter_func[vitype & 1];
 
 	int ispal = (vi_v_sync & 0x3ff) > 550;
-
-	if (!ispal && !lerp_en && vitype == 2 && !onetimewarnings.ntscnolerp)
-	{
-		popmessage("Hardware tests conducted by marshallh and dragonminded show that at least some of 16-bit NTSC modes are incompatible with disabling VI interpolation. \
-					Results on hardware can be unpredictable.");
-		onetimewarnings.ntscnolerp = 1;
-	}
 
 	
 	
@@ -1141,10 +1137,28 @@ int rdp_update()
 #endif
 
 	INT32 v_start = (vi_v_start >> 16) & 0x3ff;
-	INT32 h_start = ((vi_h_start >> 16) & 0x3ff) - (ispal ? 128 : 108);
+	INT32 h_start = (vi_h_start >> 16) & 0x3ff; 
+
+	UINT32 x_add = vi_x_scale & 0xfff;
+
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	if (!lerp_en && vitype == 2 && !onetimewarnings.nolerp && h_start < 0x80 && x_add <= 0x200)
+	{
+		popmessage("Disabling VI interpolation in 16-bit color modes causes glitches on hardware if h_start is less than 128 pixels and x_scale is less or equal to 0x200.");
+		onetimewarnings.nolerp = 1;
+	}
+
+	h_start -= (ispal ? 128 : 108);
 
 	UINT32 x_start, x_start_init = (vi_x_scale >> 16) & 0xfff;
-	UINT32 x_add = vi_x_scale & 0xfff;
 
 	int h_start_clamped = 0;
 
