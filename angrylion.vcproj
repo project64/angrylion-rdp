@@ -2,7 +2,7 @@
 <VisualStudioProject
 	ProjectType="Visual C++"
 	Version="7.10"
-	Name="mylittle"
+	Name="angrylion"
 	ProjectGUID="{D86C6E84-3371-4B20-8620-A703FF3F2CC5}"
 	Keyword="Win32Proj">
 	<Platforms>
@@ -32,12 +32,12 @@
 			<Tool
 				Name="VCLinkerTool"
 				AdditionalOptions="ddraw.lib dxguid.lib"
-				OutputFile="$(OutDir)/mylittle.dll"
+				OutputFile="$(OutDir)/angrylion.dll"
 				LinkIncremental="2"
 				GenerateDebugInformation="TRUE"
-				ProgramDatabaseFile="$(OutDir)/mylittle.pdb"
+				ProgramDatabaseFile="$(OutDir)/angrylion.pdb"
 				SubSystem="2"
-				ImportLibrary="$(OutDir)/mylittle.lib"
+				ImportLibrary="$(OutDir)/angrylion.lib"
 				TargetMachine="1"/>
 			<Tool
 				Name="VCMIDLTool"/>
@@ -73,7 +73,7 @@
 				InlineFunctionExpansion="1"
 				OmitFramePointers="TRUE"
 				OptimizeForProcessor="2"
-				PreprocessorDefinitions="WIN32;NDEBUG;_WINDOWS;_USRDLL;MYLITTLE_EXPORTS"
+				PreprocessorDefinitions="WIN32;NDEBUG;_WINDOWS;_USRDLL;"
 				StringPooling="TRUE"
 				ExceptionHandling="FALSE"
 				BasicRuntimeChecks="0"
@@ -92,7 +92,7 @@
 			<Tool
 				Name="VCLinkerTool"
 				AdditionalOptions="ddraw.lib dxguid.lib"
-				OutputFile="$(OutDir)/mylittle.dll"
+				OutputFile="$(OutDir)/angrylion.dll"
 				LinkIncremental="1"
 				GenerateDebugInformation="TRUE"
 				GenerateMapFile="TRUE"
@@ -101,7 +101,7 @@
 				SubSystem="2"
 				OptimizeReferences="2"
 				EnableCOMDATFolding="2"
-				ImportLibrary="$(OutDir)/mylittle.lib"
+				ImportLibrary="$(OutDir)/angrylion.lib"
 				TargetMachine="1"/>
 			<Tool
 				Name="VCMIDLTool"/>
