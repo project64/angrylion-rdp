@@ -4,6 +4,7 @@
 	Version="9.00"
 	Name="angrylion"
 	ProjectGUID="{D86C6E84-3371-4B20-8620-A703FF3F2CC5}"
+	RootNamespace="angrylion"
 	Keyword="Win32Proj"
 	TargetFrameworkVersion="131072"
 	>
@@ -64,6 +65,7 @@
 				AdditionalOptions="ddraw.lib dxguid.lib"
 				OutputFile="$(OutDir)/angrylion.dll"
 				LinkIncremental="2"
+				AdditionalLibraryDirectories="$(SolutionDir)3rdParty\directx\lib"
 				GenerateDebugInformation="true"
 				ProgramDatabaseFile="$(OutDir)/angrylion.pdb"
 				SubSystem="2"
@@ -151,6 +153,7 @@
 				AdditionalOptions="ddraw.lib dxguid.lib"
 				OutputFile="$(OutDir)/angrylion.dll"
 				LinkIncremental="1"
+				AdditionalLibraryDirectories="$(SolutionDir)3rdParty\directx\lib"
 				GenerateDebugInformation="true"
 				GenerateMapFile="true"
 				MapExports="true"
